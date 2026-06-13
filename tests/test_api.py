@@ -7,6 +7,7 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
+from app import main as main_module
 from app.config import Settings
 from app.db import SCHEMA
 from app.main import app, get_repo, get_settings
@@ -31,6 +32,7 @@ def client() -> Iterator[TestClient]:
             port=8080,
             default_task_minutes=15,
             owner_recall_minutes=30,
+            api_token="",
         )
 
     app.dependency_overrides[get_repo] = repo_override
@@ -118,3 +120,23 @@ def test_task_package_includes_memory_refs(client: TestClient) -> None:
     body = package.json()
     assert body["task"]["goal"] == "Implement Boss Attack"
     assert [memory["key"] for memory in body["memories"]] == ["boss_system"]
+
+
+def test_api_token_required_when_configured(client: TestClient) -> None:
+    original_settings = main_module.settings
+    main_module.settings = Settings(
+        db_path=Path(":memory:"),
+        host="127.0.0.1",
+        port=8080,
+        default_task_minutes=15,
+        owner_recall_minutes=30,
+        api_token="secret-token",
+    )
+    try:
+        assert client.get("/health").status_code == 200
+        unauthorized = client.get("/tasks")
+        assert unauthorized.status_code == 401
+        authorized = client.get("/tasks", headers={"Authorization": "Bearer secret-token"})
+        assert authorized.status_code == 200
+    finally:
+        main_module.settings = original_settings

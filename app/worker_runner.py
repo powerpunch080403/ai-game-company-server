@@ -10,11 +10,18 @@ from pathlib import Path
 from typing import Any
 
 import httpx
+from dotenv import load_dotenv
+
+load_dotenv()
 
 
 def request_json(method: str, url: str, **kwargs: Any) -> Any:
+    headers = dict(kwargs.pop("headers", {}))
+    api_token = os.getenv("GAME_COMPANY_API_TOKEN", "")
+    if api_token:
+        headers["Authorization"] = f"Bearer {api_token}"
     with httpx.Client(timeout=30) as client:
-        response = client.request(method, url, **kwargs)
+        response = client.request(method, url, headers=headers, **kwargs)
         if response.status_code == 204:
             return None
         response.raise_for_status()

@@ -39,6 +39,12 @@ API 문서:
 http://localhost:8080/docs
 ```
 
+외부 접속을 열 때는 `.env`에 `GAME_COMPANY_API_TOKEN`을 반드시 설정하세요. 토큰이 설정된 서버에는 API 요청 시 아래 헤더가 필요합니다.
+
+```text
+Authorization: Bearer your-token
+```
+
 ## Worker Runner
 
 Worker는 서버에서 자기 역할의 Task를 1개 임대하고, 관련 Memory를 포함한 작업 패키지를 `runs/task-{id}`에 저장합니다.
@@ -69,15 +75,56 @@ Windows PowerShell:
 
 ## Ubuntu 메인 서버 배포 초안
 
-이 폴더를 메인 컴퓨터로 복사한 뒤:
+현재 추천 배포 경로는 `/srv/ai-game-company-server`입니다.
+
+Windows 노트북에서 메인컴퓨터로 배포:
+
+```powershell
+.\scripts\deploy_main_server.ps1
+```
+
+배포 스크립트가 하는 일:
+
+- GitHub repo clone 또는 pull
+- Python venv 생성
+- requirements 설치
+- `.env` 생성
+- 최초 DB seed
+
+메인컴퓨터에서 서버 시작:
 
 ```bash
-chmod +x scripts/*.sh
-./scripts/bootstrap_ubuntu.sh
 ./scripts/run_dev.sh
 ```
 
-Tailscale IP에서 접근하려면 방화벽에서 8080 포트를 열거나 Tailscale 내부에서만 접근하세요.
+또는 백그라운드 실행:
+
+```bash
+./scripts/start_server.sh
+```
+
+중지:
+
+```bash
+./scripts/stop_server.sh
+```
+
+외부에서도 접근하려면 공유기/방화벽에서 8080 포트 접근을 허용해야 합니다. 공개 인터넷에 열 경우 `GAME_COMPANY_API_TOKEN` 없이 실행하지 마세요.
+
+## DB 백업
+
+추천 기본값은 `./backups`에 SQLite 백업을 남기는 방식입니다.
+
+```bash
+./scripts/backup_db.sh
+```
+
+Ubuntu에 `sqlite3`가 없다면 설치하세요.
+
+```bash
+sudo apt update
+sudo apt install -y sqlite3
+```
 
 ## 머신 설정
 

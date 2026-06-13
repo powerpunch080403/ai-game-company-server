@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from fastapi import Depends, FastAPI, HTTPException, Query
+from fastapi import Depends, FastAPI, HTTPException, Query, Request
+from fastapi.responses import JSONResponse
 
 from app.config import Settings, load_settings
 from app.db import connect, init_db
@@ -25,6 +26,8 @@ app = FastAPI(
     description="Owner, memory, task queue, and worker reporting API for game development automation.",
 )
 
+PUBLIC_PATHS = {"/health", "/docs", "/openapi.json", "/redoc"}
+
 
 def get_settings() -> Settings:
     return settings
@@ -36,6 +39,17 @@ def get_repo() -> Repository:
 
 def not_found(error: KeyError) -> HTTPException:
     return HTTPException(status_code=404, detail=str(error))
+
+
+@app.middleware("http")
+async def require_api_token(request: Request, call_next):
+    if settings.api_token and request.url.path not in PUBLIC_PATHS:
+        auth_header = request.headers.get("authorization", "")
+        token_header = request.headers.get("x-api-token", "")
+        bearer_token = auth_header.removeprefix("Bearer ").strip()
+        if bearer_token != settings.api_token and token_header != settings.api_token:
+            return JSONResponse({"detail": "Missing or invalid API token"}, status_code=401)
+    return await call_next(request)
 
 
 @app.get("/health")
