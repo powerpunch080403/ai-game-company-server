@@ -9,6 +9,7 @@ from app.db import transaction
 from app.schemas import (
     EpicCreate,
     MemoryCreate,
+    OwnerRunCreate,
     ProjectCreate,
     SubEpicCreate,
     TaskCreate,
@@ -303,6 +304,49 @@ class Repository:
             "needs_owner_attention": needs_owner_attention,
             "owner_recall_rule": f"last success + {owner_recall_minutes}m + failure",
         }
+
+    def create_owner_run(self, payload: OwnerRunCreate, prompt: str, command: str, run_dir: str) -> dict[str, Any]:
+        timestamp = now_iso()
+        cur = self.conn.execute(
+            """
+            INSERT INTO owner_runs (status, objective, context, prompt, command, run_dir, created_at)
+            VALUES ('pending', ?, ?, ?, ?, ?, ?)
+            """,
+            (payload.objective, payload.context, prompt, command, run_dir, timestamp),
+        )
+        self.conn.commit()
+        return self.get_owner_run(cur.lastrowid)
+
+    def start_owner_run(self, run_id: int) -> None:
+        timestamp = now_iso()
+        self.conn.execute(
+            "UPDATE owner_runs SET status = 'running', started_at = ?, completed_at = NULL WHERE id = ?",
+            (timestamp, run_id),
+        )
+        self.conn.commit()
+
+    def finish_owner_run(self, run_id: int, status: str, exit_code: int | None, stdout: str, stderr: str) -> dict[str, Any]:
+        timestamp = now_iso()
+        self.conn.execute(
+            """
+            UPDATE owner_runs
+            SET status = ?, exit_code = ?, stdout = ?, stderr = ?, completed_at = ?
+            WHERE id = ?
+            """,
+            (status, exit_code, stdout, stderr, timestamp, run_id),
+        )
+        self.conn.commit()
+        return self.get_owner_run(run_id)
+
+    def get_owner_run(self, run_id: int) -> dict[str, Any]:
+        row = self.conn.execute("SELECT * FROM owner_runs WHERE id = ?", (run_id,)).fetchone()
+        if row is None:
+            raise KeyError("owner run not found")
+        return row_to_dict(row) or {}
+
+    def list_owner_runs(self) -> list[dict[str, Any]]:
+        rows = self.conn.execute("SELECT * FROM owner_runs ORDER BY id DESC").fetchall()
+        return [row_to_dict(row) or {} for row in rows]
 
     def _add_task_event(self, task_id: int, event_type: str, message: str) -> None:
         self.conn.execute(

@@ -100,6 +100,24 @@ CREATE TABLE IF NOT EXISTS task_events (
     message TEXT NOT NULL,
     created_at TEXT NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS owner_runs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    status TEXT NOT NULL,
+    objective TEXT NOT NULL,
+    context TEXT NOT NULL,
+    prompt TEXT NOT NULL,
+    command TEXT NOT NULL,
+    run_dir TEXT NOT NULL,
+    exit_code INTEGER,
+    stdout TEXT NOT NULL DEFAULT '',
+    stderr TEXT NOT NULL DEFAULT '',
+    created_at TEXT NOT NULL,
+    started_at TEXT,
+    completed_at TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_owner_runs_status ON owner_runs(status);
 """
 
 

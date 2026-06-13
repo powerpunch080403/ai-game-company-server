@@ -68,3 +68,9 @@ class WorkerReportCreate(BaseModel):
     tests: list[str] = Field(default_factory=list)
     summary: str = ""
     issues: str = ""
+
+
+class OwnerRunCreate(BaseModel):
+    objective: str = Field(min_length=1)
+    context: str = ""
+    dry_run: bool = False

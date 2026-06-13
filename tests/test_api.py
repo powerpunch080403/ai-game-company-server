@@ -33,6 +33,9 @@ def client() -> Iterator[TestClient]:
             default_task_minutes=15,
             owner_recall_minutes=30,
             api_token="",
+            owner_command="",
+            owner_timeout_seconds=900,
+            owner_runs_dir=Path("./owner-runs-test"),
         )
 
     app.dependency_overrides[get_repo] = repo_override
@@ -131,6 +134,9 @@ def test_api_token_required_when_configured(client: TestClient) -> None:
         default_task_minutes=15,
         owner_recall_minutes=30,
         api_token="secret-token",
+        owner_command="",
+        owner_timeout_seconds=900,
+        owner_runs_dir=Path("./owner-runs-test"),
     )
     try:
         assert client.get("/health").status_code == 200
@@ -140,3 +146,23 @@ def test_api_token_required_when_configured(client: TestClient) -> None:
         assert authorized.status_code == 200
     finally:
         main_module.settings = original_settings
+
+
+def test_owner_run_dry_run_records_prompt(client: TestClient) -> None:
+    response = client.post(
+        "/owner/runs",
+        json={
+            "objective": "Break combat system into worker tasks",
+            "context": "No game engine selected yet.",
+            "dry_run": True,
+        },
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["status"] == "dry_run"
+    assert "Break combat system" in body["prompt"]
+    assert "No game engine selected yet." in body["prompt"]
+
+    runs = client.get("/owner/runs")
+    assert runs.status_code == 200
+    assert runs.json()[0]["id"] == body["id"]

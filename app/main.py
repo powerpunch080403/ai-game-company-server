@@ -1,14 +1,18 @@
 from __future__ import annotations
 
+import subprocess
+
 from fastapi import Depends, FastAPI, HTTPException, Query, Request
 from fastapi.responses import JSONResponse
 
 from app.config import Settings, load_settings
 from app.db import connect, init_db
+from app.owner_runner import build_owner_prompt, run_owner_command
 from app.repository import Repository
 from app.schemas import (
     EpicCreate,
     MemoryCreate,
+    OwnerRunCreate,
     ProjectCreate,
     SubEpicCreate,
     TaskCreate,
@@ -158,3 +162,47 @@ def owner_dashboard(
     config: Settings = Depends(get_settings),
 ) -> dict:
     return repo.dashboard(config.owner_recall_minutes)
+
+
+@app.post("/owner/runs")
+def create_owner_run(
+    payload: OwnerRunCreate,
+    repo: Repository = Depends(get_repo),
+    config: Settings = Depends(get_settings),
+) -> dict:
+    prompt = build_owner_prompt(payload.objective, payload.context)
+    owner_runs = repo.list_owner_runs()
+    next_run_id = owner_runs[0]["id"] + 1 if owner_runs else 1
+    run_dir = config.owner_runs_dir / f"owner-run-{next_run_id}"
+    run = repo.create_owner_run(payload, prompt, config.owner_command, str(run_dir))
+    if payload.dry_run or not config.owner_command:
+        status = "dry_run" if payload.dry_run else "blocked"
+        message = "Dry run only." if payload.dry_run else "GAME_COMPANY_OWNER_COMMAND is not configured."
+        return repo.finish_owner_run(run["id"], status, None, prompt, message)
+
+    repo.start_owner_run(run["id"])
+    try:
+        exit_code, stdout, stderr = run_owner_command(config, prompt, run_dir)
+    except subprocess.TimeoutExpired as exc:
+        return repo.finish_owner_run(
+            run["id"],
+            "failed",
+            None,
+            exc.stdout or "",
+            f"Owner command timed out after {config.owner_timeout_seconds}s.",
+        )
+    status = "success" if exit_code == 0 else "failed"
+    return repo.finish_owner_run(run["id"], status, exit_code, stdout, stderr)
+
+
+@app.get("/owner/runs")
+def list_owner_runs(repo: Repository = Depends(get_repo)) -> list[dict]:
+    return repo.list_owner_runs()
+
+
+@app.get("/owner/runs/{run_id}")
+def get_owner_run(run_id: int, repo: Repository = Depends(get_repo)) -> dict:
+    try:
+        return repo.get_owner_run(run_id)
+    except KeyError as exc:
+        raise not_found(exc) from exc
