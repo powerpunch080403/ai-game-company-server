@@ -73,6 +73,10 @@ class Repository:
             raise KeyError("project not found")
         return row_to_dict(row) or {}
 
+    def list_projects(self) -> list[dict[str, Any]]:
+        rows = self.conn.execute("SELECT * FROM projects ORDER BY id ASC").fetchall()
+        return [row_to_dict(row) or {} for row in rows]
+
     def update_project_config(self, project_id: int, payload: ProjectConfigUpdate) -> dict[str, Any]:
         self.get_project(project_id)
         timestamp = now_iso()

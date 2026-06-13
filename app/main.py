@@ -67,6 +67,19 @@ def create_project(payload: ProjectCreate, repo: Repository = Depends(get_repo))
     return repo.create_project(payload)
 
 
+@app.get("/projects")
+def list_projects(repo: Repository = Depends(get_repo)) -> list[dict]:
+    return repo.list_projects()
+
+
+@app.get("/projects/{project_id}")
+def get_project(project_id: int, repo: Repository = Depends(get_repo)) -> dict:
+    try:
+        return repo.get_project(project_id)
+    except KeyError as exc:
+        raise not_found(exc) from exc
+
+
 @app.patch("/projects/{project_id}/config")
 def update_project_config(project_id: int, payload: ProjectConfigUpdate, repo: Repository = Depends(get_repo)) -> dict:
     try:

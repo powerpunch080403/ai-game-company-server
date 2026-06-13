@@ -179,6 +179,14 @@ def test_project_config_flows_into_task_package(client: TestClient) -> None:
     assert package.json()["project"]["repo_url"] == "https://example.test/updated-game.git"
     assert package.json()["project"]["base_branch"] == "develop"
 
+    listed = client.get("/projects")
+    assert listed.status_code == 200
+    assert listed.json()[0]["id"] == project_id
+
+    fetched = client.get(f"/projects/{project_id}")
+    assert fetched.status_code == 200
+    assert fetched.json()["workspace_path"] == "/tmp/updated-game-workspace"
+
 
 def test_api_token_required_when_configured(client: TestClient) -> None:
     original_settings = main_module.settings
