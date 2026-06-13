@@ -335,9 +335,15 @@ def test_owner_task_merge_api_reviews_and_merges_successful_task(client: TestCli
     assert preview.json()["status"] == "ready"
     assert preview.json()["dry_run"] is True
 
-    merged = client.post(f"/owner/tasks/{task['id']}/merge", json={"dry_run": False, "push": True})
+    next_preview = client.post("/owner/merge-candidates/merge-next", json={})
+    assert next_preview.status_code == 200
+    assert next_preview.json()["status"] == "ready"
+    assert next_preview.json()["candidate"]["task"]["id"] == task["id"]
+
+    merged = client.post("/owner/merge-candidates/merge-next", json={"dry_run": False, "push": True})
     assert merged.status_code == 200
     assert merged.json()["status"] == "merged"
+    assert merged.json()["selected"]["task"]["id"] == task["id"]
     assert run_git(["show", "main:notes.txt"], cwd=remote) == "merged by api"
 
     events = client.get(f"/tasks/{task['id']}/events").json()

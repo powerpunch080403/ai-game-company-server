@@ -100,6 +100,26 @@ def build_merge_review(
     }
 
 
+def collect_merge_candidates(repo: Repository) -> list[dict[str, Any]]:
+    candidates = []
+    for task in repo.list_tasks(status="success"):
+        try:
+            package = repo.get_task_package(task["id"])
+            reports = repo.list_task_reports(task["id"])
+            events = repo.list_task_events(task["id"])
+        except KeyError:
+            continue
+        review = build_merge_review(package, reports, events)
+        candidates.append(
+            {
+                "task": task,
+                "latest_report": reports[0] if reports else None,
+                "review": review,
+            }
+        )
+    return candidates
+
+
 @app.middleware("http")
 async def require_api_token(request: Request, call_next):
     if settings.api_token and request.url.path not in PUBLIC_PATHS:
@@ -266,23 +286,22 @@ def owner_dashboard(
 
 @app.get("/owner/merge-candidates")
 def list_owner_merge_candidates(repo: Repository = Depends(get_repo)) -> list[dict]:
-    candidates = []
-    for task in repo.list_tasks(status="success"):
-        try:
-            package = repo.get_task_package(task["id"])
-            reports = repo.list_task_reports(task["id"])
-            events = repo.list_task_events(task["id"])
-        except KeyError:
-            continue
-        review = build_merge_review(package, reports, events)
-        candidates.append(
-            {
-                "task": task,
-                "latest_report": reports[0] if reports else None,
-                "review": review,
-            }
-        )
-    return candidates
+    return collect_merge_candidates(repo)
+
+
+@app.post("/owner/merge-candidates/merge-next")
+def merge_next_owner_candidate(
+    payload: OwnerTaskMergeRequest,
+    repo: Repository = Depends(get_repo),
+) -> dict:
+    candidates = collect_merge_candidates(repo)
+    ready = next((candidate for candidate in candidates if candidate["review"]["eligible"]), None)
+    if ready is None:
+        return {"status": "no_candidates", "dry_run": payload.dry_run, "candidate_count": len(candidates)}
+    if payload.dry_run:
+        return {"status": "ready", "dry_run": True, "candidate": ready}
+    result = merge_owner_task(ready["task"]["id"], payload, repo)
+    return {"selected": ready, **result}
 
 
 @app.post("/owner/tasks/{task_id}/merge")
