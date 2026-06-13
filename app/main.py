@@ -17,6 +17,7 @@ from app.schemas import (
     EpicCreate,
     MemoryCreate,
     OwnerRunCreate,
+    OwnerTaskCancelRequest,
     OwnerTaskMergeRequest,
     OwnerTaskRetryRequest,
     ProjectConfigUpdate,
@@ -384,6 +385,20 @@ def retry_owner_task(
 ) -> dict:
     try:
         return repo.retry_task(task_id, payload.reason)
+    except KeyError as exc:
+        raise not_found(exc) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+@app.post("/owner/tasks/{task_id}/cancel")
+def cancel_owner_task(
+    task_id: int,
+    payload: OwnerTaskCancelRequest,
+    repo: Repository = Depends(get_repo),
+) -> dict:
+    try:
+        return repo.cancel_task(task_id, payload.reason)
     except KeyError as exc:
         raise not_found(exc) from exc
     except ValueError as exc:

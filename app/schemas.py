@@ -16,7 +16,7 @@ MemoryType = Literal[
 ]
 
 WorkerRole = Literal["code_worker", "image_worker", "voice_worker", "test_runner"]
-TaskStatus = Literal["pending", "running", "success", "failed", "blocked"]
+TaskStatus = Literal["pending", "running", "success", "failed", "blocked", "canceled"]
 
 
 class ProjectCreate(BaseModel):
@@ -97,4 +97,8 @@ class OwnerTaskMergeRequest(BaseModel):
 
 
 class OwnerTaskRetryRequest(BaseModel):
+    reason: str = ""
+
+
+class OwnerTaskCancelRequest(BaseModel):
     reason: str = ""

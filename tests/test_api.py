@@ -201,6 +201,32 @@ def test_owner_retry_failed_task_requeues_it(client: TestClient) -> None:
     assert [event["event_type"] for event in events] == ["created", "leased", "reported", "retry_requested", "leased"]
 
 
+def test_owner_cancel_task_removes_it_from_queue(client: TestClient) -> None:
+    task = client.post(
+        "/tasks",
+        json={
+            "role": "code_worker",
+            "goal": "Cancel obsolete task",
+            "requirements": ["No longer needed"],
+            "success_criteria": ["Not leased"],
+            "estimated_minutes": 15,
+            "memory_refs": [],
+            "branch": "worker/cancel-obsolete-task",
+        },
+    ).json()
+
+    canceled = client.post(f"/owner/tasks/{task['id']}/cancel", json={"reason": "Obsolete."})
+    assert canceled.status_code == 200
+    assert canceled.json()["status"] == "canceled"
+    assert canceled.json()["leased_by"] is None
+
+    lease = client.post("/workers/code-1/lease", json={"role": "code_worker", "lease_minutes": 30})
+    assert lease.status_code == 204
+
+    events = client.get(f"/tasks/{task['id']}/events").json()
+    assert events[-1]["event_type"] == "canceled"
+
+
 def test_task_package_includes_memory_refs(client: TestClient) -> None:
     memory_payload = {
         "type": "project_knowledge",

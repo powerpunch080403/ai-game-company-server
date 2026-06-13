@@ -324,6 +324,32 @@ class Repository:
             self._add_task_event(task_id, "retry_requested", message)
         return self.get_task(task_id)
 
+    def cancel_task(self, task_id: int, reason: str = "") -> dict[str, Any]:
+        task = self.get_task(task_id)
+        if task["status"] == "success":
+            raise ValueError("successful task cannot be canceled")
+        if any(event["event_type"] == "merged" for event in self.list_task_events(task_id)):
+            raise ValueError("merged task cannot be canceled")
+        timestamp = now_iso()
+        with transaction(self.conn):
+            self.conn.execute(
+                """
+                UPDATE tasks
+                SET status = 'canceled',
+                    leased_by = NULL,
+                    leased_until = NULL,
+                    completed_at = ?,
+                    updated_at = ?
+                WHERE id = ?
+                """,
+                (timestamp, timestamp, task_id),
+            )
+            message = "Owner canceled task"
+            if reason:
+                message += f": {reason}"
+            self._add_task_event(task_id, "canceled", message)
+        return self.get_task(task_id)
+
     def _project_for_task(self, task_id: int) -> dict[str, Any] | None:
         row = self.conn.execute(
             """
