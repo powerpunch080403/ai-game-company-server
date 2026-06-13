@@ -157,6 +157,18 @@ Task 1의 branch 준비:
 ./scripts/prepare_git_workspace.sh --task-id 1
 ```
 
+메인컴퓨터에서 엔진 미정 테스트용 repo 만들기:
+
+```bash
+./scripts/bootstrap_demo_game_repo.sh
+```
+
+기본 생성 위치:
+
+```text
+/home/powerpunch/game-repos/demo-game.git
+```
+
 로컬 package 파일로 준비:
 
 ```bash
