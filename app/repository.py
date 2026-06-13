@@ -292,6 +292,11 @@ class Repository:
         ).fetchall()
         return [row_to_dict(row) or {} for row in rows]
 
+    def add_task_event(self, task_id: int, event_type: str, message: str) -> None:
+        self.get_task(task_id)
+        self._add_task_event(task_id, event_type, message)
+        self.conn.commit()
+
     def _project_for_task(self, task_id: int) -> dict[str, Any] | None:
         row = self.conn.execute(
             """

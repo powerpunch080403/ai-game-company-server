@@ -85,3 +85,8 @@ class OwnerRunCreate(BaseModel):
     objective: str = Field(min_length=1)
     context: str = ""
     dry_run: bool = False
+
+
+class OwnerTaskMergeRequest(BaseModel):
+    dry_run: bool = True
+    push: bool = True

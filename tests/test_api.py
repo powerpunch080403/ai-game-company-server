@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import sqlite3
+import subprocess
 from collections.abc import Iterator
 from pathlib import Path
 
@@ -10,8 +11,10 @@ from fastapi.testclient import TestClient
 from app import main as main_module
 from app.config import Settings
 from app.db import SCHEMA
+from app.git_workspace import git_executable, prepare_branch, run_git
 from app.main import app, get_repo, get_settings
 from app.repository import Repository
+from app.workspace_worker import commit_changes, push_branch
 
 
 @pytest.fixture()
@@ -245,3 +248,91 @@ def test_owner_run_dry_run_records_prompt(client: TestClient) -> None:
     runs = client.get("/owner/runs")
     assert runs.status_code == 200
     assert runs.json()[0]["id"] == body["id"]
+
+
+def git(args: list[str], cwd: Path) -> str:
+    completed = subprocess.run(
+        [git_executable(), *args],
+        cwd=cwd,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        check=False,
+    )
+    assert completed.returncode == 0, completed.stdout
+    return completed.stdout.strip()
+
+
+def make_git_repo(tmp_path: Path) -> tuple[Path, Path]:
+    source = tmp_path / "source"
+    source.mkdir()
+    git(["init", "-b", "main"], cwd=source)
+    git(["config", "user.email", "test@example.com"], cwd=source)
+    git(["config", "user.name", "Test User"], cwd=source)
+    (source / "README.md").write_text("# Demo\n", encoding="utf-8")
+    git(["add", "README.md"], cwd=source)
+    git(["commit", "-m", "Initial"], cwd=source)
+    remote = tmp_path / "remote.git"
+    git(["clone", "--bare", str(source), str(remote)], cwd=tmp_path)
+    workspace = tmp_path / "workspace"
+    return remote, workspace
+
+
+def test_owner_task_merge_api_reviews_and_merges_successful_task(client: TestClient, tmp_path: Path) -> None:
+    remote, workspace = make_git_repo(tmp_path)
+    project = client.post(
+        "/projects",
+        json={
+            "name": "Merge API Game",
+            "description": "",
+            "engine": "undecided",
+            "repo_url": str(remote),
+            "workspace_path": str(workspace),
+            "base_branch": "main",
+        },
+    )
+    epic = client.post(f"/projects/{project.json()['id']}/epics", json={"name": "Docs", "goal": ""})
+    sub_epic = client.post(f"/epics/{epic.json()['id']}/sub-epics", json={"name": "Notes", "goal": ""})
+    task = client.post(
+        f"/sub-epics/{sub_epic.json()['id']}/tasks",
+        json={
+            "role": "code_worker",
+            "goal": "Create notes",
+            "requirements": ["Write notes.txt"],
+            "success_criteria": ["Merged to main"],
+            "estimated_minutes": 15,
+            "memory_refs": [],
+            "branch": "worker/merge-api-notes",
+        },
+    ).json()
+    package = client.get(f"/tasks/{task['id']}/package").json()
+    prepare_branch(package, str(remote), workspace, "main")
+    (workspace / "notes.txt").write_text("merged by api\n", encoding="utf-8")
+    commit_changes(workspace, package["task"], ["notes.txt"])
+    push_branch(workspace, "worker/merge-api-notes")
+    report = {
+        "status": "success",
+        "estimated_minutes": 15,
+        "actual_minutes": 1,
+        "productive_minutes": 1,
+        "error_minutes": 0,
+        "retry_count": 0,
+        "files_changed": ["notes.txt"],
+        "tests": ["manual"],
+        "summary": "Ready to merge.",
+        "issues": "",
+    }
+    assert client.post(f"/workers/code-1/tasks/{task['id']}/report", json=report).status_code == 200
+
+    preview = client.post(f"/owner/tasks/{task['id']}/merge", json={})
+    assert preview.status_code == 200
+    assert preview.json()["status"] == "ready"
+    assert preview.json()["dry_run"] is True
+
+    merged = client.post(f"/owner/tasks/{task['id']}/merge", json={"dry_run": False, "push": True})
+    assert merged.status_code == 200
+    assert merged.json()["status"] == "merged"
+    assert run_git(["show", "main:notes.txt"], cwd=remote) == "merged by api"
+
+    events = client.get(f"/tasks/{task['id']}/events").json()
+    assert events[-1]["event_type"] == "merged"

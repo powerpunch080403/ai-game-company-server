@@ -1,18 +1,23 @@
 from __future__ import annotations
 
 import subprocess
+from pathlib import Path
+from typing import Any
 
 from fastapi import Depends, FastAPI, HTTPException, Query, Request
 from fastapi.responses import JSONResponse
 
 from app.config import Settings, load_settings
 from app.db import connect, init_db
+from app.git_merge import merge_worker_branch
+from app.git_workspace import GitWorkspaceError
 from app.owner_runner import build_owner_prompt, run_owner_command
 from app.repository import Repository
 from app.schemas import (
     EpicCreate,
     MemoryCreate,
     OwnerRunCreate,
+    OwnerTaskMergeRequest,
     ProjectConfigUpdate,
     ProjectCreate,
     SubEpicCreate,
@@ -44,6 +49,36 @@ def get_repo() -> Repository:
 
 def not_found(error: KeyError) -> HTTPException:
     return HTTPException(status_code=404, detail=str(error))
+
+
+def build_merge_review(package: dict[str, Any], reports: list[dict[str, Any]]) -> dict[str, Any]:
+    task = package["task"]
+    project = package.get("project")
+    reasons: list[str] = []
+    if task["status"] != "success":
+        reasons.append("task status must be success")
+    if not task["branch"].startswith("worker/"):
+        reasons.append("task branch must start with worker/")
+    if not reports:
+        reasons.append("task must have at least one worker report")
+    elif reports[0]["status"] != "success":
+        reasons.append("latest worker report must be success")
+    if not project:
+        reasons.append("task must belong to a project")
+    else:
+        if not project.get("repo_url"):
+            reasons.append("project repo_url is required")
+        if not project.get("workspace_path"):
+            reasons.append("project workspace_path is required")
+    return {
+        "eligible": not reasons,
+        "reasons": reasons,
+        "task_id": task["id"],
+        "task_status": task["status"],
+        "branch": task["branch"],
+        "latest_report_status": reports[0]["status"] if reports else None,
+        "project_id": project["id"] if project else None,
+    }
 
 
 @app.middleware("http")
@@ -208,6 +243,43 @@ def owner_dashboard(
     config: Settings = Depends(get_settings),
 ) -> dict:
     return repo.dashboard(config.owner_recall_minutes)
+
+
+@app.post("/owner/tasks/{task_id}/merge")
+def merge_owner_task(
+    task_id: int,
+    payload: OwnerTaskMergeRequest,
+    repo: Repository = Depends(get_repo),
+) -> dict:
+    try:
+        package = repo.get_task_package(task_id)
+        reports = repo.list_task_reports(task_id)
+    except KeyError as exc:
+        raise not_found(exc) from exc
+
+    review = build_merge_review(package, reports)
+    if payload.dry_run:
+        return {"status": "ready" if review["eligible"] else "blocked", "dry_run": True, "review": review}
+    if not review["eligible"]:
+        raise HTTPException(status_code=409, detail=review)
+
+    project = package["project"]
+    try:
+        result = merge_worker_branch(
+            package,
+            project["repo_url"],
+            Path(project["workspace_path"]),
+            project.get("base_branch") or "main",
+            push=payload.push,
+        )
+    except GitWorkspaceError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    repo.add_task_event(
+        task_id,
+        "merged",
+        f"Owner merged {result['branch']} into {result['base_branch']} pushed={result['pushed']}",
+    )
+    return {"status": "merged", "dry_run": False, "review": review, "merge": result}
 
 
 @app.post("/owner/runs")
