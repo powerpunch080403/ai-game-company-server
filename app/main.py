@@ -161,6 +161,40 @@ def build_task_queue_review(package: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def build_owner_readiness(repo: Repository, owner_recall_minutes: int) -> dict[str, Any]:
+    dashboard = repo.dashboard(owner_recall_minutes)
+    profiles = repo.list_model_profiles(enabled=True)
+    profile_roles = {profile["role"] for profile in profiles}
+    pending_reviews = []
+    for task in repo.list_tasks(status="pending"):
+        try:
+            pending_reviews.append(build_task_queue_review(repo.get_task_package(task["id"])))
+        except KeyError:
+            continue
+    blockers: list[str] = []
+    warnings: list[str] = []
+    if "owner" not in profile_roles:
+        blockers.append("owner model profile is not configured")
+    if "code_worker" not in profile_roles:
+        blockers.append("code_worker model profile is not configured")
+    if dashboard["task_counts"].get("failed", 0):
+        blockers.append("failed tasks need owner review")
+    if dashboard["task_counts"].get("running", 0):
+        warnings.append("running tasks exist")
+    blocked_pending = [review for review in pending_reviews if not review["workspace_ready"]]
+    if blocked_pending:
+        warnings.append(f"{len(blocked_pending)} pending tasks are not workspace-ready")
+    return {
+        "ready": not blockers,
+        "blockers": blockers,
+        "warnings": warnings,
+        "task_counts": dashboard["task_counts"],
+        "model_profiles": sorted(profile_roles),
+        "pending_workspace_ready": sum(1 for review in pending_reviews if review["workspace_ready"]),
+        "pending_workspace_blocked": len(blocked_pending),
+    }
+
+
 @app.middleware("http")
 async def require_api_token(request: Request, call_next):
     if settings.api_token and request.url.path not in PUBLIC_PATHS:
@@ -345,6 +379,14 @@ def owner_dashboard(
     config: Settings = Depends(get_settings),
 ) -> dict:
     return repo.dashboard(config.owner_recall_minutes)
+
+
+@app.get("/owner/readiness")
+def owner_readiness(
+    repo: Repository = Depends(get_repo),
+    config: Settings = Depends(get_settings),
+) -> dict:
+    return build_owner_readiness(repo, config.owner_recall_minutes)
 
 
 @app.put("/owner/model-profiles/{role}")

@@ -451,6 +451,22 @@ def test_api_token_required_when_configured(client: TestClient) -> None:
 
 
 def test_owner_model_profiles_can_be_upserted_and_listed(client: TestClient) -> None:
+    initial = client.get("/owner/readiness")
+    assert initial.status_code == 200
+    assert "owner model profile is not configured" in initial.json()["blockers"]
+
+    owner_payload = {
+        "role": "owner",
+        "provider": "codex-cli",
+        "model": "configured-by-command",
+        "base_url": "",
+        "api_key_env": "",
+        "temperature": 0.2,
+        "max_tokens": None,
+        "enabled": True,
+        "notes": "Owner command profile.",
+    }
+    assert client.put("/owner/model-profiles/owner", json=owner_payload).status_code == 200
     payload = {
         "role": "code_worker",
         "provider": "openai-compatible",
@@ -479,6 +495,11 @@ def test_owner_model_profiles_can_be_upserted_and_listed(client: TestClient) -> 
 
     mismatch = client.put("/owner/model-profiles/owner", json=payload)
     assert mismatch.status_code == 400
+
+    readiness = client.get("/owner/readiness")
+    assert readiness.status_code == 200
+    assert readiness.json()["ready"] is True
+    assert readiness.json()["model_profiles"] == ["code_worker", "owner"]
 
 
 def test_owner_run_dry_run_records_prompt(client: TestClient) -> None:
