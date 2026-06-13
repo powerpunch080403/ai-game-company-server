@@ -119,12 +119,7 @@ Windows 노트북에서 메인컴퓨터로 배포:
 ./scripts/backup_db.sh
 ```
 
-Ubuntu에 `sqlite3`가 없다면 설치하세요.
-
-```bash
-sudo apt update
-sudo apt install -y sqlite3
-```
+백업은 Python 표준 라이브러리의 SQLite backup API를 사용하므로 별도 `sqlite3` CLI 설치가 필요 없습니다.
 
 ## 머신 설정
 
