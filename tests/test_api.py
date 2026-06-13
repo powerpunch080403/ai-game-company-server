@@ -124,6 +124,49 @@ def test_memory_search_by_tag(client: TestClient) -> None:
     assert result.json()[0]["key"] == "project_rules_v1"
 
 
+def test_owner_retry_failed_task_requeues_it(client: TestClient) -> None:
+    task_payload = {
+        "role": "code_worker",
+        "goal": "Fix compile error",
+        "requirements": ["Inspect logs"],
+        "success_criteria": ["Compile succeeds"],
+        "estimated_minutes": 15,
+        "memory_refs": [],
+        "branch": "worker/fix-compile-error",
+    }
+    created = client.post("/tasks", json=task_payload).json()
+    leased = client.post("/workers/code-1/lease", json={"role": "code_worker", "lease_minutes": 30}).json()
+    assert leased["id"] == created["id"]
+    failed_report = {
+        "status": "failed",
+        "estimated_minutes": 15,
+        "actual_minutes": 10,
+        "productive_minutes": 6,
+        "error_minutes": 4,
+        "retry_count": 0,
+        "files_changed": [],
+        "tests": ["compile"],
+        "summary": "Compile still fails.",
+        "issues": "Missing symbol.",
+    }
+    failed = client.post(f"/workers/code-1/tasks/{created['id']}/report", json=failed_report)
+    assert failed.status_code == 200
+    assert failed.json()["status"] == "failed"
+
+    retried = client.post(f"/owner/tasks/{created['id']}/retry", json={"reason": "Try a smaller fix."})
+    assert retried.status_code == 200
+    assert retried.json()["status"] == "pending"
+    assert retried.json()["retry_count"] == 1
+
+    leased_again = client.post("/workers/code-2/lease", json={"role": "code_worker", "lease_minutes": 30})
+    assert leased_again.status_code == 200
+    assert leased_again.json()["id"] == created["id"]
+    assert leased_again.json()["leased_by"] == "code-2"
+
+    events = client.get(f"/tasks/{created['id']}/events").json()
+    assert [event["event_type"] for event in events] == ["created", "leased", "reported", "retry_requested", "leased"]
+
+
 def test_task_package_includes_memory_refs(client: TestClient) -> None:
     memory_payload = {
         "type": "project_knowledge",

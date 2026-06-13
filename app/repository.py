@@ -297,6 +297,33 @@ class Repository:
         self._add_task_event(task_id, event_type, message)
         self.conn.commit()
 
+    def retry_task(self, task_id: int, reason: str = "") -> dict[str, Any]:
+        task = self.get_task(task_id)
+        if task["status"] == "success":
+            raise ValueError("successful task cannot be retried")
+        if task["status"] == "pending":
+            raise ValueError("pending task is already queued")
+        timestamp = now_iso()
+        with transaction(self.conn):
+            self.conn.execute(
+                """
+                UPDATE tasks
+                SET status = 'pending',
+                    retry_count = retry_count + 1,
+                    leased_by = NULL,
+                    leased_until = NULL,
+                    completed_at = NULL,
+                    updated_at = ?
+                WHERE id = ?
+                """,
+                (timestamp, task_id),
+            )
+            message = "Owner requested retry"
+            if reason:
+                message += f": {reason}"
+            self._add_task_event(task_id, "retry_requested", message)
+        return self.get_task(task_id)
+
     def _project_for_task(self, task_id: int) -> dict[str, Any] | None:
         row = self.conn.execute(
             """

@@ -90,3 +90,7 @@ class OwnerRunCreate(BaseModel):
 class OwnerTaskMergeRequest(BaseModel):
     dry_run: bool = True
     push: bool = True
+
+
+class OwnerTaskRetryRequest(BaseModel):
+    reason: str = ""

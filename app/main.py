@@ -18,6 +18,7 @@ from app.schemas import (
     MemoryCreate,
     OwnerRunCreate,
     OwnerTaskMergeRequest,
+    OwnerTaskRetryRequest,
     ProjectConfigUpdate,
     ProjectCreate,
     SubEpicCreate,
@@ -355,6 +356,20 @@ def merge_owner_task(
         f"Owner merged {result['branch']} into {result['base_branch']} pushed={result['pushed']}",
     )
     return {"status": "merged", "dry_run": False, "review": review, "merge": result}
+
+
+@app.post("/owner/tasks/{task_id}/retry")
+def retry_owner_task(
+    task_id: int,
+    payload: OwnerTaskRetryRequest,
+    repo: Repository = Depends(get_repo),
+) -> dict:
+    try:
+        return repo.retry_task(task_id, payload.reason)
+    except KeyError as exc:
+        raise not_found(exc) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
 
 
 @app.post("/owner/runs")
