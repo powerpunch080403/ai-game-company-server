@@ -324,6 +324,12 @@ def test_owner_task_merge_api_reviews_and_merges_successful_task(client: TestCli
     }
     assert client.post(f"/workers/code-1/tasks/{task['id']}/report", json=report).status_code == 200
 
+    candidates = client.get("/owner/merge-candidates")
+    assert candidates.status_code == 200
+    candidate = next(item for item in candidates.json() if item["task"]["id"] == task["id"])
+    assert candidate["review"]["eligible"] is True
+    assert candidate["review"]["warnings"] == []
+
     preview = client.post(f"/owner/tasks/{task['id']}/merge", json={})
     assert preview.status_code == 200
     assert preview.json()["status"] == "ready"
@@ -336,3 +342,11 @@ def test_owner_task_merge_api_reviews_and_merges_successful_task(client: TestCli
 
     events = client.get(f"/tasks/{task['id']}/events").json()
     assert events[-1]["event_type"] == "merged"
+
+    duplicate_preview = client.post(f"/owner/tasks/{task['id']}/merge", json={})
+    assert duplicate_preview.status_code == 200
+    assert duplicate_preview.json()["status"] == "blocked"
+    assert "task has already been merged" in duplicate_preview.json()["review"]["reasons"]
+
+    duplicate_merge = client.post(f"/owner/tasks/{task['id']}/merge", json={"dry_run": False, "push": True})
+    assert duplicate_merge.status_code == 409

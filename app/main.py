@@ -51,10 +51,18 @@ def not_found(error: KeyError) -> HTTPException:
     return HTTPException(status_code=404, detail=str(error))
 
 
-def build_merge_review(package: dict[str, Any], reports: list[dict[str, Any]]) -> dict[str, Any]:
+def build_merge_review(
+    package: dict[str, Any],
+    reports: list[dict[str, Any]],
+    events: list[dict[str, Any]],
+) -> dict[str, Any]:
     task = package["task"]
     project = package.get("project")
     reasons: list[str] = []
+    warnings: list[str] = []
+    merged = any(event["event_type"] == "merged" for event in events)
+    if merged:
+        reasons.append("task has already been merged")
     if task["status"] != "success":
         reasons.append("task status must be success")
     if not task["branch"].startswith("worker/"):
@@ -63,6 +71,13 @@ def build_merge_review(package: dict[str, Any], reports: list[dict[str, Any]]) -
         reasons.append("task must have at least one worker report")
     elif reports[0]["status"] != "success":
         reasons.append("latest worker report must be success")
+    else:
+        if not reports[0]["files_changed"]:
+            warnings.append("latest worker report has no changed files")
+        if not reports[0]["tests"]:
+            warnings.append("latest worker report has no test evidence")
+        if reports[0]["issues"]:
+            warnings.append("latest worker report contains issues")
     if not project:
         reasons.append("task must belong to a project")
     else:
@@ -73,11 +88,15 @@ def build_merge_review(package: dict[str, Any], reports: list[dict[str, Any]]) -
     return {
         "eligible": not reasons,
         "reasons": reasons,
+        "warnings": warnings,
+        "merged": merged,
         "task_id": task["id"],
         "task_status": task["status"],
+        "goal": task["goal"],
         "branch": task["branch"],
         "latest_report_status": reports[0]["status"] if reports else None,
         "project_id": project["id"] if project else None,
+        "project_name": project["name"] if project else None,
     }
 
 
@@ -245,6 +264,27 @@ def owner_dashboard(
     return repo.dashboard(config.owner_recall_minutes)
 
 
+@app.get("/owner/merge-candidates")
+def list_owner_merge_candidates(repo: Repository = Depends(get_repo)) -> list[dict]:
+    candidates = []
+    for task in repo.list_tasks(status="success"):
+        try:
+            package = repo.get_task_package(task["id"])
+            reports = repo.list_task_reports(task["id"])
+            events = repo.list_task_events(task["id"])
+        except KeyError:
+            continue
+        review = build_merge_review(package, reports, events)
+        candidates.append(
+            {
+                "task": task,
+                "latest_report": reports[0] if reports else None,
+                "review": review,
+            }
+        )
+    return candidates
+
+
 @app.post("/owner/tasks/{task_id}/merge")
 def merge_owner_task(
     task_id: int,
@@ -254,10 +294,11 @@ def merge_owner_task(
     try:
         package = repo.get_task_package(task_id)
         reports = repo.list_task_reports(task_id)
+        events = repo.list_task_events(task_id)
     except KeyError as exc:
         raise not_found(exc) from exc
 
-    review = build_merge_review(package, reports)
+    review = build_merge_review(package, reports, events)
     if payload.dry_run:
         return {"status": "ready" if review["eligible"] else "blocked", "dry_run": True, "review": review}
     if not review["eligible"]:
