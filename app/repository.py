@@ -360,10 +360,10 @@ class Repository:
         return self.get_task(task_id)
 
     def complete_task(self, task_id: int, worker_id: str, payload: WorkerReportCreate) -> dict[str, Any]:
-        self.get_task(task_id)
+        task = self.get_task(task_id)
         timestamp = now_iso()
         with transaction(self.conn):
-            self.conn.execute(
+            report_cur = self.conn.execute(
                 """
                 INSERT INTO worker_reports (
                     task_id, worker_id, status, estimated_minutes, actual_minutes,
@@ -388,6 +388,43 @@ class Repository:
                     timestamp,
                 ),
             )
+            report_id = report_cur.lastrowid
+            history_key = f"task_history_{task_id}_{report_id}"
+            history_body = "\n".join(
+                [
+                    f"Task: {task['goal']}",
+                    f"Role: {task['role']}",
+                    f"Status: {payload.status}",
+                    f"Estimated: {payload.estimated_minutes}m",
+                    f"Actual: {payload.actual_minutes}m",
+                    f"Productive: {payload.productive_minutes}m",
+                    f"Error: {payload.error_minutes}m",
+                    f"Retry: {payload.retry_count}",
+                    f"Files: {', '.join(payload.files_changed) if payload.files_changed else 'none'}",
+                    f"Tests: {', '.join(payload.tests) if payload.tests else 'none'}",
+                    f"Summary: {payload.summary}",
+                    f"Issues: {payload.issues or 'none'}",
+                ]
+            )
+            self.conn.execute(
+                """
+                INSERT INTO memories (type, key, title, body, tags_json, created_at, updated_at)
+                VALUES ('task_history', ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(key) DO UPDATE SET
+                    title = excluded.title,
+                    body = excluded.body,
+                    tags_json = excluded.tags_json,
+                    updated_at = excluded.updated_at
+                """,
+                (
+                    history_key,
+                    f"Task {task_id} report {report_id}: {payload.status}",
+                    history_body,
+                    json.dumps(["task_history", task["role"], payload.status]),
+                    timestamp,
+                    timestamp,
+                ),
+            )
             self.conn.execute(
                 """
                 UPDATE tasks
@@ -403,6 +440,63 @@ class Repository:
             )
             self._add_task_event(task_id, "reported", f"{worker_id} reported {payload.status}")
         return self.get_task(task_id)
+
+    def list_task_history(
+        self,
+        limit: int = 50,
+        status: str | None = None,
+        role: str | None = None,
+    ) -> list[dict[str, Any]]:
+        clauses: list[str] = []
+        params: list[Any] = []
+        if status:
+            clauses.append("worker_reports.status = ?")
+            params.append(status)
+        if role:
+            clauses.append("tasks.role = ?")
+            params.append(role)
+        where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
+        rows = self.conn.execute(
+            f"""
+            SELECT
+                worker_reports.*,
+                tasks.goal AS task_goal,
+                tasks.role AS task_role,
+                tasks.branch AS task_branch,
+                projects.id AS project_id,
+                projects.name AS project_name
+            FROM worker_reports
+            JOIN tasks ON tasks.id = worker_reports.task_id
+            LEFT JOIN sub_epics ON sub_epics.id = tasks.sub_epic_id
+            LEFT JOIN epics ON epics.id = sub_epics.epic_id
+            LEFT JOIN projects ON projects.id = epics.project_id
+            {where}
+            ORDER BY worker_reports.created_at DESC, worker_reports.id DESC
+            LIMIT ?
+            """,
+            [*params, limit],
+        ).fetchall()
+        return [row_to_dict(row) or {} for row in rows]
+
+    def task_history_summary(self) -> list[dict[str, Any]]:
+        rows = self.conn.execute(
+            """
+            SELECT
+                tasks.role AS role,
+                worker_reports.status AS status,
+                COUNT(*) AS report_count,
+                ROUND(AVG(worker_reports.estimated_minutes), 2) AS avg_estimated_minutes,
+                ROUND(AVG(worker_reports.actual_minutes), 2) AS avg_actual_minutes,
+                ROUND(AVG(worker_reports.actual_minutes - worker_reports.estimated_minutes), 2) AS avg_estimate_delta_minutes,
+                ROUND(AVG(worker_reports.retry_count), 2) AS avg_retry_count,
+                ROUND(AVG(worker_reports.error_minutes), 2) AS avg_error_minutes
+            FROM worker_reports
+            JOIN tasks ON tasks.id = worker_reports.task_id
+            GROUP BY tasks.role, worker_reports.status
+            ORDER BY tasks.role ASC, worker_reports.status ASC
+            """
+        ).fetchall()
+        return [row_to_dict(row) or {} for row in rows]
 
     def dashboard(self, owner_recall_minutes: int) -> dict[str, Any]:
         counts = {

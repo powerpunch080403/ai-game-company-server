@@ -90,6 +90,21 @@ def test_task_lifecycle(client: TestClient) -> None:
     assert reports.json()[0]["summary"] == "Boss FSM implemented."
     assert reports.json()[0]["files_changed"] == ["Assets/Scripts/Boss/BossFsm.cs"]
 
+    history_memory = client.get("/memory", params={"type": "task_history", "q": "Boss FSM"})
+    assert history_memory.status_code == 200
+    assert history_memory.json()[0]["type"] == "task_history"
+
+    history = client.get("/owner/task-history")
+    assert history.status_code == 200
+    assert history.json()[0]["task_goal"] == "Implement Boss FSM"
+    assert history.json()[0]["files_changed"] == ["Assets/Scripts/Boss/BossFsm.cs"]
+
+    summary = client.get("/owner/task-history/summary")
+    assert summary.status_code == 200
+    assert summary.json()[0]["role"] == "code_worker"
+    assert summary.json()[0]["status"] == "success"
+    assert summary.json()[0]["report_count"] == 1
+
     events = client.get(f"/tasks/{leased_task['id']}/events")
     assert events.status_code == 200
     assert [event["event_type"] for event in events.json()] == ["created", "leased", "reported"]

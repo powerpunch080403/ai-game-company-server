@@ -284,6 +284,21 @@ def owner_dashboard(
     return repo.dashboard(config.owner_recall_minutes)
 
 
+@app.get("/owner/task-history")
+def owner_task_history(
+    status: str | None = Query(default=None),
+    role: str | None = Query(default=None),
+    limit: int = Query(default=50, ge=1, le=500),
+    repo: Repository = Depends(get_repo),
+) -> list[dict]:
+    return repo.list_task_history(limit=limit, status=status, role=role)
+
+
+@app.get("/owner/task-history/summary")
+def owner_task_history_summary(repo: Repository = Depends(get_repo)) -> list[dict]:
+    return repo.task_history_summary()
+
+
 @app.get("/owner/merge-candidates")
 def list_owner_merge_candidates(repo: Repository = Depends(get_repo)) -> list[dict]:
     return collect_merge_candidates(repo)
