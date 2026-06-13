@@ -48,7 +48,7 @@ def main() -> None:
         ModelProfileUpsert(
             role="code_worker",
             provider="openai-compatible",
-            model="configured-by-env",
+            model="GAME_COMPANY_WORKER_MODEL",
             base_url="GAME_COMPANY_WORKER_API_BASE_URL",
             api_key_env="GAME_COMPANY_WORKER_API_KEY",
             notes="API worker can override this with environment variables in v1.",

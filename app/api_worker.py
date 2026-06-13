@@ -80,10 +80,50 @@ def extract_message_content(response_json: dict[str, Any]) -> str:
     return content
 
 
-def call_worker_api(prompt: str) -> str:
-    base_url = os.getenv("GAME_COMPANY_WORKER_API_BASE_URL", "").strip()
-    api_key = os.getenv("GAME_COMPANY_WORKER_API_KEY", "").strip()
-    model = os.getenv("GAME_COMPANY_WORKER_MODEL", "").strip()
+def resolve_profile_value(value: str, fallback_env: str = "") -> str:
+    clean = value.strip()
+    if clean and clean != "configured-by-env":
+        return os.getenv(clean, clean).strip()
+    if fallback_env:
+        return os.getenv(fallback_env, "").strip()
+    return ""
+
+
+def load_model_profile(server: str, role: str) -> dict[str, Any] | None:
+    try:
+        profile = request_json("GET", f"{server}/owner/model-profiles/{role}")
+    except httpx.HTTPStatusError as exc:
+        if exc.response.status_code == 404:
+            return None
+        raise
+    if not profile.get("enabled", True):
+        return None
+    return profile
+
+
+def resolve_worker_api_config(profile: dict[str, Any] | None = None) -> dict[str, Any]:
+    profile = profile or {}
+    base_url = resolve_profile_value(
+        str(profile.get("base_url") or ""),
+        "GAME_COMPANY_WORKER_API_BASE_URL",
+    )
+    api_key_env = str(profile.get("api_key_env") or "GAME_COMPANY_WORKER_API_KEY")
+    api_key = os.getenv(api_key_env, "").strip()
+    model = resolve_profile_value(str(profile.get("model") or ""), "GAME_COMPANY_WORKER_MODEL")
+    temperature = float(profile.get("temperature") if profile.get("temperature") is not None else os.getenv("GAME_COMPANY_WORKER_TEMPERATURE", "0.2"))
+    return {
+        "base_url": base_url,
+        "api_key": api_key,
+        "model": model,
+        "temperature": temperature,
+    }
+
+
+def call_worker_api(prompt: str, profile: dict[str, Any] | None = None) -> str:
+    config = resolve_worker_api_config(profile)
+    base_url = config["base_url"]
+    api_key = config["api_key"]
+    model = config["model"]
     timeout = float(os.getenv("GAME_COMPANY_WORKER_TIMEOUT_SECONDS", "120"))
 
     if not base_url:
@@ -99,7 +139,7 @@ def call_worker_api(prompt: str) -> str:
             {"role": "system", "content": "You are a careful, low-cost AI game development worker."},
             {"role": "user", "content": prompt},
         ],
-        "temperature": float(os.getenv("GAME_COMPANY_WORKER_TEMPERATURE", "0.2")),
+        "temperature": config["temperature"],
     }
     headers = {
         "Authorization": f"Bearer {api_key}",
@@ -146,8 +186,15 @@ def run_api_worker(args: argparse.Namespace) -> int:
         print(f"Dry run wrote prompt to {run_dir}")
         return 0
 
+    profile = load_model_profile(args.server, task["role"])
+    if profile:
+        (run_dir / "model_profile.json").write_text(
+            json.dumps(profile, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+
     try:
-        response_text = call_worker_api(prompt)
+        response_text = call_worker_api(prompt, profile)
     except Exception as exc:
         response_text = ""
         report = build_report(
