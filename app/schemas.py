@@ -16,6 +16,7 @@ MemoryType = Literal[
 ]
 
 WorkerRole = Literal["code_worker", "image_worker", "voice_worker", "test_runner"]
+ModelProfileRole = Literal["owner", "code_worker", "image_worker", "voice_worker", "test_runner"]
 TaskStatus = Literal["pending", "running", "success", "failed", "blocked", "canceled"]
 
 
@@ -112,3 +113,15 @@ class OwnerTaskReleaseRequest(BaseModel):
 class OwnerTaskAssignRequest(BaseModel):
     sub_epic_id: int
     reason: str = ""
+
+
+class ModelProfileUpsert(BaseModel):
+    role: ModelProfileRole
+    provider: str = ""
+    model: str = ""
+    base_url: str = ""
+    api_key_env: str = ""
+    temperature: float = Field(default=0.2, ge=0, le=2)
+    max_tokens: int | None = Field(default=None, ge=1)
+    enabled: bool = True
+    notes: str = ""

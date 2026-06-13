@@ -122,6 +122,21 @@ CREATE TABLE IF NOT EXISTS owner_runs (
 );
 
 CREATE INDEX IF NOT EXISTS idx_owner_runs_status ON owner_runs(status);
+
+CREATE TABLE IF NOT EXISTS model_profiles (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    role TEXT NOT NULL UNIQUE,
+    provider TEXT NOT NULL DEFAULT '',
+    model TEXT NOT NULL DEFAULT '',
+    base_url TEXT NOT NULL DEFAULT '',
+    api_key_env TEXT NOT NULL DEFAULT '',
+    temperature REAL NOT NULL DEFAULT 0.2,
+    max_tokens INTEGER,
+    enabled INTEGER NOT NULL DEFAULT 1,
+    notes TEXT NOT NULL DEFAULT '',
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
 """
 
 PROJECT_COLUMNS = {

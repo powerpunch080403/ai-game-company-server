@@ -16,6 +16,7 @@ from app.repository import Repository
 from app.schemas import (
     EpicCreate,
     MemoryCreate,
+    ModelProfileUpsert,
     OwnerRunCreate,
     OwnerTaskAssignRequest,
     OwnerTaskCancelRequest,
@@ -344,6 +345,33 @@ def owner_dashboard(
     config: Settings = Depends(get_settings),
 ) -> dict:
     return repo.dashboard(config.owner_recall_minutes)
+
+
+@app.put("/owner/model-profiles/{role}")
+def upsert_model_profile(
+    role: str,
+    payload: ModelProfileUpsert,
+    repo: Repository = Depends(get_repo),
+) -> dict:
+    if payload.role != role:
+        raise HTTPException(status_code=400, detail="profile role must match path role")
+    return repo.upsert_model_profile(payload)
+
+
+@app.get("/owner/model-profiles")
+def list_model_profiles(
+    enabled: bool | None = Query(default=None),
+    repo: Repository = Depends(get_repo),
+) -> list[dict]:
+    return repo.list_model_profiles(enabled=enabled)
+
+
+@app.get("/owner/model-profiles/{role}")
+def get_model_profile(role: str, repo: Repository = Depends(get_repo)) -> dict:
+    try:
+        return repo.get_model_profile(role)
+    except KeyError as exc:
+        raise not_found(exc) from exc
 
 
 @app.get("/owner/task-history")

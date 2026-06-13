@@ -3,7 +3,7 @@ from __future__ import annotations
 from app.config import load_settings
 from app.db import connect, init_db
 from app.repository import Repository
-from app.schemas import MemoryCreate, ProjectCreate, TaskCreate
+from app.schemas import MemoryCreate, ModelProfileUpsert, ProjectCreate, TaskCreate
 
 
 def main() -> None:
@@ -33,6 +33,25 @@ def main() -> None:
             title="C# coding rules",
             body="Classes use PascalCase. Private fields use _camelCase. Avoid new singletons unless approved.",
             tags=["rules", "csharp"],
+        )
+    )
+    repo.upsert_model_profile(
+        ModelProfileUpsert(
+            role="owner",
+            provider="codex-cli",
+            model="configured-by-command",
+            api_key_env="",
+            notes="Owner currently runs through GAME_COMPANY_OWNER_COMMAND.",
+        )
+    )
+    repo.upsert_model_profile(
+        ModelProfileUpsert(
+            role="code_worker",
+            provider="openai-compatible",
+            model="configured-by-env",
+            base_url="GAME_COMPANY_WORKER_API_BASE_URL",
+            api_key_env="GAME_COMPANY_WORKER_API_KEY",
+            notes="API worker can override this with environment variables in v1.",
         )
     )
     repo.create_task(

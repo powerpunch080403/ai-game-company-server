@@ -9,6 +9,7 @@ from app.db import transaction
 from app.schemas import (
     EpicCreate,
     MemoryCreate,
+    ModelProfileUpsert,
     OwnerRunCreate,
     ProjectConfigUpdate,
     ProjectCreate,
@@ -36,6 +37,8 @@ def row_to_dict(row: sqlite3.Row | None) -> dict[str, Any] | None:
     ):
         if key in item:
             item[key.removesuffix("_json")] = json.loads(item.pop(key))
+    if "enabled" in item:
+        item["enabled"] = bool(item["enabled"])
     return item
 
 
@@ -75,6 +78,62 @@ class Repository:
 
     def list_projects(self) -> list[dict[str, Any]]:
         rows = self.conn.execute("SELECT * FROM projects ORDER BY id ASC").fetchall()
+        return [row_to_dict(row) or {} for row in rows]
+
+    def upsert_model_profile(self, payload: ModelProfileUpsert) -> dict[str, Any]:
+        timestamp = now_iso()
+        self.conn.execute(
+            """
+            INSERT INTO model_profiles (
+                role, provider, model, base_url, api_key_env, temperature,
+                max_tokens, enabled, notes, created_at, updated_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(role) DO UPDATE SET
+                provider = excluded.provider,
+                model = excluded.model,
+                base_url = excluded.base_url,
+                api_key_env = excluded.api_key_env,
+                temperature = excluded.temperature,
+                max_tokens = excluded.max_tokens,
+                enabled = excluded.enabled,
+                notes = excluded.notes,
+                updated_at = excluded.updated_at
+            """,
+            (
+                payload.role,
+                payload.provider,
+                payload.model,
+                payload.base_url,
+                payload.api_key_env,
+                payload.temperature,
+                payload.max_tokens,
+                1 if payload.enabled else 0,
+                payload.notes,
+                timestamp,
+                timestamp,
+            ),
+        )
+        self.conn.commit()
+        return self.get_model_profile(payload.role)
+
+    def get_model_profile(self, role: str) -> dict[str, Any]:
+        row = self.conn.execute("SELECT * FROM model_profiles WHERE role = ?", (role,)).fetchone()
+        if row is None:
+            raise KeyError("model profile not found")
+        return row_to_dict(row) or {}
+
+    def list_model_profiles(self, enabled: bool | None = None) -> list[dict[str, Any]]:
+        clauses: list[str] = []
+        params: list[Any] = []
+        if enabled is not None:
+            clauses.append("enabled = ?")
+            params.append(1 if enabled else 0)
+        where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
+        rows = self.conn.execute(
+            f"SELECT * FROM model_profiles {where} ORDER BY role ASC",
+            params,
+        ).fetchall()
         return [row_to_dict(row) or {} for row in rows]
 
     def get_project_tree(self, project_id: int) -> dict[str, Any]:

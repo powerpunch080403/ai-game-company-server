@@ -450,6 +450,37 @@ def test_api_token_required_when_configured(client: TestClient) -> None:
         main_module.settings = original_settings
 
 
+def test_owner_model_profiles_can_be_upserted_and_listed(client: TestClient) -> None:
+    payload = {
+        "role": "code_worker",
+        "provider": "openai-compatible",
+        "model": "gpt-low-cost-worker",
+        "base_url": "https://api.example.test/v1",
+        "api_key_env": "GAME_COMPANY_WORKER_API_KEY",
+        "temperature": 0.1,
+        "max_tokens": 4096,
+        "enabled": True,
+        "notes": "Cheap execution model.",
+    }
+    created = client.put("/owner/model-profiles/code_worker", json=payload)
+    assert created.status_code == 200
+    body = created.json()
+    assert body["role"] == "code_worker"
+    assert body["enabled"] is True
+    assert body["api_key_env"] == "GAME_COMPANY_WORKER_API_KEY"
+
+    fetched = client.get("/owner/model-profiles/code_worker")
+    assert fetched.status_code == 200
+    assert fetched.json()["model"] == "gpt-low-cost-worker"
+
+    listed = client.get("/owner/model-profiles", params={"enabled": True})
+    assert listed.status_code == 200
+    assert listed.json()[0]["role"] == "code_worker"
+
+    mismatch = client.put("/owner/model-profiles/owner", json=payload)
+    assert mismatch.status_code == 400
+
+
 def test_owner_run_dry_run_records_prompt(client: TestClient) -> None:
     response = client.post(
         "/owner/runs",
