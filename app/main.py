@@ -109,6 +109,14 @@ def get_task(task_id: int, repo: Repository = Depends(get_repo)) -> dict:
         raise not_found(exc) from exc
 
 
+@app.get("/tasks/{task_id}/package")
+def get_task_package(task_id: int, repo: Repository = Depends(get_repo)) -> dict:
+    try:
+        return repo.get_task_package(task_id)
+    except KeyError as exc:
+        raise not_found(exc) from exc
+
+
 @app.post("/workers/{worker_id}/lease")
 def lease_task(worker_id: str, payload: WorkerLeaseRequest, repo: Repository = Depends(get_repo)) -> dict:
     task = repo.lease_next_task(worker_id, payload.role, payload.lease_minutes)

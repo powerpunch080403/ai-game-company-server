@@ -90,3 +90,31 @@ def test_memory_search_by_tag(client: TestClient) -> None:
     result = client.get("/memory", params={"tag": "rules"})
     assert result.status_code == 200
     assert result.json()[0]["key"] == "project_rules_v1"
+
+
+def test_task_package_includes_memory_refs(client: TestClient) -> None:
+    memory_payload = {
+        "type": "project_knowledge",
+        "key": "boss_system",
+        "title": "Boss System",
+        "body": "BossController already exists.",
+        "tags": ["boss", "combat"],
+    }
+    assert client.post("/memory", json=memory_payload).status_code == 200
+    task_payload = {
+        "role": "code_worker",
+        "goal": "Implement Boss Attack",
+        "requirements": ["Use existing BossController"],
+        "success_criteria": ["Attack can be triggered"],
+        "estimated_minutes": 15,
+        "memory_refs": ["boss_system", "missing_ref"],
+        "branch": "worker/boss-attack",
+    }
+    created = client.post("/tasks", json=task_payload)
+    assert created.status_code == 200
+
+    package = client.get(f"/tasks/{created.json()['id']}/package")
+    assert package.status_code == 200
+    body = package.json()
+    assert body["task"]["goal"] == "Implement Boss Attack"
+    assert [memory["key"] for memory in body["memories"]] == ["boss_system"]

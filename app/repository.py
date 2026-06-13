@@ -174,6 +174,18 @@ class Repository:
             raise KeyError("task not found")
         return row_to_dict(row) or {}
 
+    def get_task_package(self, task_id: int) -> dict[str, Any]:
+        task = self.get_task(task_id)
+        memories = []
+        for key in task["memory_refs"]:
+            memory = self.conn.execute("SELECT * FROM memories WHERE key = ?", (key,)).fetchone()
+            if memory is not None:
+                memories.append(row_to_dict(memory) or {})
+        return {
+            "task": task,
+            "memories": memories,
+        }
+
     def list_tasks(self, status: str | None = None, role: str | None = None) -> list[dict[str, Any]]:
         clauses: list[str] = []
         params: list[Any] = []

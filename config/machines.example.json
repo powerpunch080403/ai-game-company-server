@@ -1,0 +1,17 @@
+{
+  "development_server": {
+    "name": "main-ubuntu",
+    "role": "owner-memory-queue-workers",
+    "host": "100.x.y.z",
+    "ssh_user": "ubuntu",
+    "workspace": "/srv/ai-game-company"
+  },
+  "game_development_machine": {
+    "name": "game-dev",
+    "role": "repository-build-test",
+    "host": "100.a.b.c",
+    "ssh_user": "ubuntu",
+    "workspace": "/srv/game-projects/maldhalla-class-game",
+    "repo_url": "https://github.com/powerpunch080403/your-game-repo.git"
+  }
+}
