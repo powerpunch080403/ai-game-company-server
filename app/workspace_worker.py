@@ -54,6 +54,10 @@ def commit_changes(workspace: Path, task: dict[str, Any], files_changed: list[st
     return run_git(["rev-parse", "HEAD"], cwd=workspace)
 
 
+def push_branch(workspace: Path, branch: str) -> None:
+    run_git(["push", "-u", "origin", branch], cwd=workspace)
+
+
 def ensure_git_identity(workspace: Path) -> None:
     email = subprocess.run(
         [git_executable(), "config", "user.email"],
@@ -147,10 +151,16 @@ def run_workspace_worker(args: argparse.Namespace) -> int:
         commit_hash = None
         if return_code == 0 and files_changed and not args.no_commit:
             commit_hash = commit_changes(workspace, task, files_changed)
+        pushed = False
+        if return_code == 0 and args.push:
+            push_branch(workspace, branch_info["branch"])
+            pushed = True
         status = "success" if return_code == 0 else "failed"
         summary = f"Workspace command finished with exit code {return_code}."
         if commit_hash:
             summary += f" Commit: {commit_hash}"
+        if pushed:
+            summary += f" Pushed: {branch_info['branch']}"
         report = build_workspace_report(
             package,
             status,
@@ -194,6 +204,7 @@ def main() -> int:
     parser.add_argument("--command", required=True)
     parser.add_argument("--allow-dirty", action="store_true")
     parser.add_argument("--no-commit", action="store_true")
+    parser.add_argument("--push", action="store_true", help="Push the worker branch to origin after a successful command.")
     parser.add_argument("--no-report", action="store_true")
     parser.add_argument("--report", action="store_true", help="Report even when running a specific --task-id.")
     return run_workspace_worker(parser.parse_args())

@@ -82,6 +82,11 @@ def test_task_lifecycle(client: TestClient) -> None:
     assert completed.status_code == 200
     assert completed.json()["status"] == "success"
 
+    reports = client.get(f"/tasks/{leased_task['id']}/reports")
+    assert reports.status_code == 200
+    assert reports.json()[0]["summary"] == "Boss FSM implemented."
+    assert reports.json()[0]["files_changed"] == ["Assets/Scripts/Boss/BossFsm.cs"]
+
 
 def test_memory_search_by_tag(client: TestClient) -> None:
     payload = {

@@ -231,6 +231,14 @@ class Repository:
             "memories": memories,
         }
 
+    def list_task_reports(self, task_id: int) -> list[dict[str, Any]]:
+        self.get_task(task_id)
+        rows = self.conn.execute(
+            "SELECT * FROM worker_reports WHERE task_id = ? ORDER BY id DESC",
+            (task_id,),
+        ).fetchall()
+        return [row_to_dict(row) or {} for row in rows]
+
     def _project_for_task(self, task_id: int) -> dict[str, Any] | None:
         row = self.conn.execute(
             """

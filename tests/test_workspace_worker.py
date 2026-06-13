@@ -4,7 +4,7 @@ import subprocess
 from pathlib import Path
 
 from app.git_workspace import git_executable, prepare_branch, run_git
-from app.workspace_worker import commit_changes, git_status_files, run_workspace_command
+from app.workspace_worker import commit_changes, git_status_files, push_branch, run_workspace_command
 from app.worker_runner import write_task_package
 
 
@@ -71,3 +71,16 @@ def test_workspace_command_creates_and_commits_file(tmp_path: Path) -> None:
     assert commit_hash
     assert git_status_files(workspace) == []
     assert run_git(["branch", "--show-current"], cwd=workspace) == "worker/create-notes"
+
+
+def test_push_branch_publishes_worker_branch(tmp_path: Path) -> None:
+    remote, workspace = make_repo(tmp_path)
+    package = make_package()
+    prepare_branch(package, str(remote), workspace, "main")
+    (workspace / "notes.txt").write_text("pushed\n", encoding="utf-8")
+    commit_changes(workspace, package["task"], ["notes.txt"])
+
+    push_branch(workspace, "worker/create-notes")
+
+    remote_branches = run_git(["branch", "--list", "worker/create-notes"], cwd=remote)
+    assert "worker/create-notes" in remote_branches
