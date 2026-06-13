@@ -22,6 +22,17 @@ TaskStatus = Literal["pending", "running", "success", "failed", "blocked"]
 class ProjectCreate(BaseModel):
     name: str = Field(min_length=1)
     description: str = ""
+    engine: str = ""
+    repo_url: str = ""
+    workspace_path: str = ""
+    base_branch: str = "main"
+
+
+class ProjectConfigUpdate(BaseModel):
+    engine: str = ""
+    repo_url: str = ""
+    workspace_path: str = ""
+    base_branch: str = "main"
 
 
 class EpicCreate(BaseModel):

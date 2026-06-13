@@ -10,6 +10,7 @@ from app.schemas import (
     EpicCreate,
     MemoryCreate,
     OwnerRunCreate,
+    ProjectConfigUpdate,
     ProjectCreate,
     SubEpicCreate,
     TaskCreate,
@@ -46,10 +47,22 @@ class Repository:
         timestamp = now_iso()
         cur = self.conn.execute(
             """
-            INSERT INTO projects (name, description, created_at, updated_at)
-            VALUES (?, ?, ?, ?)
+            INSERT INTO projects (
+                name, description, engine, repo_url, workspace_path,
+                base_branch, created_at, updated_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             """,
-            (payload.name, payload.description, timestamp, timestamp),
+            (
+                payload.name,
+                payload.description,
+                payload.engine,
+                payload.repo_url,
+                payload.workspace_path,
+                payload.base_branch,
+                timestamp,
+                timestamp,
+            ),
         )
         self.conn.commit()
         return self.get_project(cur.lastrowid)
@@ -59,6 +72,31 @@ class Repository:
         if row is None:
             raise KeyError("project not found")
         return row_to_dict(row) or {}
+
+    def update_project_config(self, project_id: int, payload: ProjectConfigUpdate) -> dict[str, Any]:
+        self.get_project(project_id)
+        timestamp = now_iso()
+        self.conn.execute(
+            """
+            UPDATE projects
+            SET engine = ?,
+                repo_url = ?,
+                workspace_path = ?,
+                base_branch = ?,
+                updated_at = ?
+            WHERE id = ?
+            """,
+            (
+                payload.engine,
+                payload.repo_url,
+                payload.workspace_path,
+                payload.base_branch,
+                timestamp,
+                project_id,
+            ),
+        )
+        self.conn.commit()
+        return self.get_project(project_id)
 
     def create_epic(self, project_id: int, payload: EpicCreate) -> dict[str, Any]:
         self.get_project(project_id)
@@ -177,6 +215,7 @@ class Repository:
 
     def get_task_package(self, task_id: int) -> dict[str, Any]:
         task = self.get_task(task_id)
+        project = self._project_for_task(task_id)
         memories = []
         for key in task["memory_refs"]:
             memory = self.conn.execute("SELECT * FROM memories WHERE key = ?", (key,)).fetchone()
@@ -184,8 +223,23 @@ class Repository:
                 memories.append(row_to_dict(memory) or {})
         return {
             "task": task,
+            "project": project,
             "memories": memories,
         }
+
+    def _project_for_task(self, task_id: int) -> dict[str, Any] | None:
+        row = self.conn.execute(
+            """
+            SELECT projects.*
+            FROM tasks
+            JOIN sub_epics ON sub_epics.id = tasks.sub_epic_id
+            JOIN epics ON epics.id = sub_epics.epic_id
+            JOIN projects ON projects.id = epics.project_id
+            WHERE tasks.id = ?
+            """,
+            (task_id,),
+        ).fetchone()
+        return row_to_dict(row)
 
     def list_tasks(self, status: str | None = None, role: str | None = None) -> list[dict[str, Any]]:
         clauses: list[str] = []

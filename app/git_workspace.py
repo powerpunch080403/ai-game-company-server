@@ -109,24 +109,32 @@ def load_package(args: argparse.Namespace) -> dict[str, Any]:
     return package
 
 
+def resolve_git_settings(args: argparse.Namespace, package: dict[str, Any]) -> tuple[str, Path, str]:
+    project = package.get("project") or {}
+    repo_url = args.repo_url or project.get("repo_url") or os.getenv("GAME_COMPANY_GAME_REPO_URL", "")
+    workspace = args.workspace or project.get("workspace_path") or os.getenv("GAME_COMPANY_GAME_WORKSPACE", "")
+    base_branch = args.base_branch or project.get("base_branch") or os.getenv("GAME_COMPANY_GAME_BASE_BRANCH", "main")
+    if not repo_url:
+        raise GitWorkspaceError("Project repo_url or GAME_COMPANY_GAME_REPO_URL is required")
+    if not workspace:
+        raise GitWorkspaceError("Project workspace_path or GAME_COMPANY_GAME_WORKSPACE is required")
+    return repo_url, Path(workspace), base_branch
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Prepare a git workspace branch for a task.")
     parser.add_argument("--server", default=os.getenv("GAME_COMPANY_SERVER", "http://127.0.0.1:8080"))
     parser.add_argument("--task-id", type=int)
     parser.add_argument("--package")
     parser.add_argument("--runs-dir", default="./runs")
-    parser.add_argument("--repo-url", default=os.getenv("GAME_COMPANY_GAME_REPO_URL", ""))
-    parser.add_argument("--workspace", default=os.getenv("GAME_COMPANY_GAME_WORKSPACE", ""))
-    parser.add_argument("--base-branch", default=os.getenv("GAME_COMPANY_GAME_BASE_BRANCH", "main"))
+    parser.add_argument("--repo-url", default="")
+    parser.add_argument("--workspace", default="")
+    parser.add_argument("--base-branch", default="")
     args = parser.parse_args()
 
-    if not args.repo_url:
-        raise GitWorkspaceError("GAME_COMPANY_GAME_REPO_URL or --repo-url is required")
-    if not args.workspace:
-        raise GitWorkspaceError("GAME_COMPANY_GAME_WORKSPACE or --workspace is required")
-
     package = load_package(args)
-    result = prepare_branch(package, args.repo_url, Path(args.workspace), args.base_branch)
+    repo_url, workspace, base_branch = resolve_git_settings(args, package)
+    result = prepare_branch(package, repo_url, workspace, base_branch)
     print(f"Workspace: {result['workspace']}")
     print(f"Base: {result['base_branch']}")
     print(f"Branch: {result['branch']}")

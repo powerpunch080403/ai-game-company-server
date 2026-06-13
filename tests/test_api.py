@@ -123,6 +123,61 @@ def test_task_package_includes_memory_refs(client: TestClient) -> None:
     body = package.json()
     assert body["task"]["goal"] == "Implement Boss Attack"
     assert [memory["key"] for memory in body["memories"]] == ["boss_system"]
+    assert body["project"] is None
+
+
+def test_project_config_flows_into_task_package(client: TestClient) -> None:
+    project = client.post(
+        "/projects",
+        json={
+            "name": "Action RPG",
+            "description": "First game project",
+            "engine": "undecided",
+            "repo_url": "https://example.test/game.git",
+            "workspace_path": "/tmp/game-workspace",
+            "base_branch": "main",
+        },
+    )
+    assert project.status_code == 200
+    project_id = project.json()["id"]
+
+    updated = client.patch(
+        f"/projects/{project_id}/config",
+        json={
+            "engine": "unity",
+            "repo_url": "https://example.test/updated-game.git",
+            "workspace_path": "/tmp/updated-game-workspace",
+            "base_branch": "develop",
+        },
+    )
+    assert updated.status_code == 200
+    assert updated.json()["engine"] == "unity"
+
+    epic = client.post(f"/projects/{project_id}/epics", json={"name": "Combat", "goal": "Combat foundation"})
+    assert epic.status_code == 200
+    sub_epic = client.post(
+        f"/epics/{epic.json()['id']}/sub-epics",
+        json={"name": "Player Combat", "goal": "Player attacks"},
+    )
+    assert sub_epic.status_code == 200
+    task = client.post(
+        f"/sub-epics/{sub_epic.json()['id']}/tasks",
+        json={
+            "role": "code_worker",
+            "goal": "Create attack input stub",
+            "requirements": ["Input stub"],
+            "success_criteria": ["Compiles"],
+            "estimated_minutes": 15,
+            "memory_refs": [],
+            "branch": "worker/player-attack-input",
+        },
+    )
+    assert task.status_code == 200
+
+    package = client.get(f"/tasks/{task.json()['id']}/package")
+    assert package.status_code == 200
+    assert package.json()["project"]["repo_url"] == "https://example.test/updated-game.git"
+    assert package.json()["project"]["base_branch"] == "develop"
 
 
 def test_api_token_required_when_configured(client: TestClient) -> None:

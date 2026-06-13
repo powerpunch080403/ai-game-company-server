@@ -14,6 +14,10 @@ CREATE TABLE IF NOT EXISTS projects (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     name TEXT NOT NULL,
     description TEXT NOT NULL DEFAULT '',
+    engine TEXT NOT NULL DEFAULT '',
+    repo_url TEXT NOT NULL DEFAULT '',
+    workspace_path TEXT NOT NULL DEFAULT '',
+    base_branch TEXT NOT NULL DEFAULT 'main',
     status TEXT NOT NULL DEFAULT 'active',
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL
@@ -120,6 +124,13 @@ CREATE TABLE IF NOT EXISTS owner_runs (
 CREATE INDEX IF NOT EXISTS idx_owner_runs_status ON owner_runs(status);
 """
 
+PROJECT_COLUMNS = {
+    "engine": "TEXT NOT NULL DEFAULT ''",
+    "repo_url": "TEXT NOT NULL DEFAULT ''",
+    "workspace_path": "TEXT NOT NULL DEFAULT ''",
+    "base_branch": "TEXT NOT NULL DEFAULT 'main'",
+}
+
 
 def connect(db_path: Path) -> sqlite3.Connection:
     db_path.parent.mkdir(parents=True, exist_ok=True)
@@ -132,6 +143,18 @@ def connect(db_path: Path) -> sqlite3.Connection:
 def init_db(db_path: Path) -> None:
     with connect(db_path) as conn:
         conn.executescript(SCHEMA)
+        migrate_db(conn)
+
+
+def migrate_db(conn: sqlite3.Connection) -> None:
+    project_columns = {
+        row["name"]
+        for row in conn.execute("PRAGMA table_info(projects)").fetchall()
+    }
+    for name, definition in PROJECT_COLUMNS.items():
+        if name not in project_columns:
+            conn.execute(f"ALTER TABLE projects ADD COLUMN {name} {definition}")
+    conn.commit()
 
 
 @contextmanager

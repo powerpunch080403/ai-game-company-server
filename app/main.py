@@ -13,6 +13,7 @@ from app.schemas import (
     EpicCreate,
     MemoryCreate,
     OwnerRunCreate,
+    ProjectConfigUpdate,
     ProjectCreate,
     SubEpicCreate,
     TaskCreate,
@@ -64,6 +65,14 @@ def health() -> dict[str, str]:
 @app.post("/projects")
 def create_project(payload: ProjectCreate, repo: Repository = Depends(get_repo)) -> dict:
     return repo.create_project(payload)
+
+
+@app.patch("/projects/{project_id}/config")
+def update_project_config(project_id: int, payload: ProjectConfigUpdate, repo: Repository = Depends(get_repo)) -> dict:
+    try:
+        return repo.update_project_config(project_id, payload)
+    except KeyError as exc:
+        raise not_found(exc) from exc
 
 
 @app.post("/projects/{project_id}/epics")

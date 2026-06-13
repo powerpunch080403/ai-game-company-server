@@ -5,7 +5,13 @@ from pathlib import Path
 
 import pytest
 
-from app.git_workspace import GitWorkspaceError, git_executable, prepare_branch, validate_worker_branch
+from app.git_workspace import (
+    GitWorkspaceError,
+    git_executable,
+    prepare_branch,
+    resolve_git_settings,
+    validate_worker_branch,
+)
 
 
 def git(args: list[str], cwd: Path) -> str:
@@ -33,6 +39,7 @@ def make_package(branch: str) -> dict:
             "memory_refs": [],
             "branch": branch,
         },
+        "project": None,
         "memories": [],
     }
 
@@ -81,3 +88,22 @@ def test_prepare_branch_rejects_origin_mismatch(tmp_path: Path) -> None:
 
     with pytest.raises(GitWorkspaceError):
         prepare_branch(make_package("worker/test"), str(second), workspace, "main")
+
+
+def test_resolve_git_settings_prefers_project_config(tmp_path: Path) -> None:
+    package = make_package("worker/test")
+    package["project"] = {
+        "repo_url": "https://example.test/game.git",
+        "workspace_path": str(tmp_path / "game"),
+        "base_branch": "develop",
+    }
+
+    class Args:
+        repo_url = ""
+        workspace = ""
+        base_branch = ""
+
+    repo_url, workspace, base_branch = resolve_git_settings(Args(), package)
+    assert repo_url == "https://example.test/game.git"
+    assert workspace == tmp_path / "game"
+    assert base_branch == "develop"
