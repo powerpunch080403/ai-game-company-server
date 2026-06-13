@@ -170,7 +170,7 @@ def run_workspace_worker(args: argparse.Namespace) -> int:
     print(f"Status: {report['status']}")
     print(f"Files changed: {len(report['files_changed'])}")
 
-    if should_report and not args.no_report:
+    if (should_report or args.report) and not args.no_report:
         request_json(
             "POST",
             f"{args.server}/workers/{args.worker_id}/tasks/{task['id']}/report",
@@ -195,6 +195,7 @@ def main() -> int:
     parser.add_argument("--allow-dirty", action="store_true")
     parser.add_argument("--no-commit", action="store_true")
     parser.add_argument("--no-report", action="store_true")
+    parser.add_argument("--report", action="store_true", help="Report even when running a specific --task-id.")
     return run_workspace_worker(parser.parse_args())
 
 
