@@ -261,7 +261,12 @@ def list_task_events(task_id: int, repo: Repository = Depends(get_repo)) -> list
 
 @app.post("/workers/{worker_id}/lease")
 def lease_task(worker_id: str, payload: WorkerLeaseRequest, repo: Repository = Depends(get_repo)) -> dict:
-    task = repo.lease_next_task(worker_id, payload.role, payload.lease_minutes)
+    task = repo.lease_next_task(
+        worker_id,
+        payload.role,
+        payload.lease_minutes,
+        requires_project_config=payload.requires_project_config,
+    )
     if task is None:
         raise HTTPException(status_code=204, detail="no task available")
     return task

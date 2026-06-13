@@ -120,7 +120,7 @@ def load_or_lease_package(args: argparse.Namespace) -> tuple[dict[str, Any], boo
     leased = request_json(
         "POST",
         f"{args.server}/workers/{args.worker_id}/lease",
-        json={"role": args.role, "lease_minutes": args.lease_minutes},
+        json={"role": args.role, "lease_minutes": args.lease_minutes, "requires_project_config": True},
     )
     if leased is None:
         raise RuntimeError("No task available.")

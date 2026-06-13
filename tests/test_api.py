@@ -357,6 +357,54 @@ def test_project_config_flows_into_task_package(client: TestClient) -> None:
     assert body["epics"][0]["sub_epics"][0]["tasks"][0]["goal"] == "Create attack input stub"
 
 
+def test_workspace_lease_requires_project_repo_config(client: TestClient) -> None:
+    orphan = client.post(
+        "/tasks",
+        json={
+            "role": "code_worker",
+            "goal": "Orphan task",
+            "requirements": ["No project"],
+            "success_criteria": ["Skipped by workspace worker"],
+            "estimated_minutes": 15,
+            "memory_refs": [],
+            "branch": "worker/orphan-task",
+        },
+    ).json()
+    project = client.post(
+        "/projects",
+        json={
+            "name": "Workspace Ready Game",
+            "description": "",
+            "engine": "undecided",
+            "repo_url": "/tmp/game.git",
+            "workspace_path": "/tmp/game-workspace",
+            "base_branch": "main",
+        },
+    ).json()
+    epic = client.post(f"/projects/{project['id']}/epics", json={"name": "Setup", "goal": ""}).json()
+    sub_epic = client.post(f"/epics/{epic['id']}/sub-epics", json={"name": "Repo", "goal": ""}).json()
+    project_task = client.post(
+        f"/sub-epics/{sub_epic['id']}/tasks",
+        json={
+            "role": "code_worker",
+            "goal": "Workspace task",
+            "requirements": ["Has project repo"],
+            "success_criteria": ["Leased by workspace worker"],
+            "estimated_minutes": 15,
+            "memory_refs": [],
+            "branch": "worker/workspace-task",
+        },
+    ).json()
+
+    leased = client.post(
+        "/workers/workspace-1/lease",
+        json={"role": "code_worker", "lease_minutes": 30, "requires_project_config": True},
+    )
+    assert leased.status_code == 200
+    assert leased.json()["id"] == project_task["id"]
+    assert client.get(f"/tasks/{orphan['id']}").json()["status"] == "pending"
+
+
 def test_api_token_required_when_configured(client: TestClient) -> None:
     original_settings = main_module.settings
     main_module.settings = Settings(

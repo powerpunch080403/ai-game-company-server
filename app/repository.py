@@ -400,18 +400,36 @@ class Repository:
         rows = self.conn.execute(f"SELECT * FROM tasks {where} ORDER BY id ASC", params).fetchall()
         return [row_to_dict(row) or {} for row in rows]
 
-    def lease_next_task(self, worker_id: str, role: str, lease_minutes: int) -> dict[str, Any] | None:
+    def lease_next_task(
+        self,
+        worker_id: str,
+        role: str,
+        lease_minutes: int,
+        requires_project_config: bool = False,
+    ) -> dict[str, Any] | None:
         timestamp = now_iso()
         lease_until = (datetime.now(UTC) + timedelta(minutes=lease_minutes)).isoformat(timespec="seconds")
+        project_config_filter = """
+                  AND EXISTS (
+                    SELECT 1
+                    FROM sub_epics
+                    JOIN epics ON epics.id = sub_epics.epic_id
+                    JOIN projects ON projects.id = epics.project_id
+                    WHERE sub_epics.id = tasks.sub_epic_id
+                      AND projects.repo_url != ''
+                      AND projects.workspace_path != ''
+                  )
+        """ if requires_project_config else ""
         with transaction(self.conn):
             row = self.conn.execute(
-                """
+                f"""
                 SELECT * FROM tasks
                 WHERE role = ?
                   AND (
                     status = 'pending'
                     OR (status = 'running' AND leased_until IS NOT NULL AND leased_until < ?)
                   )
+                  {project_config_filter}
                 ORDER BY id ASC
                 LIMIT 1
                 """,

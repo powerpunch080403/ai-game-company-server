@@ -66,6 +66,7 @@ class TaskCreate(BaseModel):
 class WorkerLeaseRequest(BaseModel):
     role: WorkerRole
     lease_minutes: int = Field(default=30, ge=1, le=240)
+    requires_project_config: bool = False
 
 
 class WorkerTaskClaimRequest(BaseModel):
