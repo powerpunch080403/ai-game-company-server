@@ -102,3 +102,7 @@ class OwnerTaskRetryRequest(BaseModel):
 
 class OwnerTaskCancelRequest(BaseModel):
     reason: str = ""
+
+
+class OwnerTaskReleaseRequest(BaseModel):
+    reason: str = ""

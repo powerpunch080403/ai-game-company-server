@@ -19,6 +19,7 @@ from app.schemas import (
     OwnerRunCreate,
     OwnerTaskCancelRequest,
     OwnerTaskMergeRequest,
+    OwnerTaskReleaseRequest,
     OwnerTaskRetryRequest,
     ProjectConfigUpdate,
     ProjectCreate,
@@ -399,6 +400,20 @@ def cancel_owner_task(
 ) -> dict:
     try:
         return repo.cancel_task(task_id, payload.reason)
+    except KeyError as exc:
+        raise not_found(exc) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+@app.post("/owner/tasks/{task_id}/release")
+def release_owner_task(
+    task_id: int,
+    payload: OwnerTaskReleaseRequest,
+    repo: Repository = Depends(get_repo),
+) -> dict:
+    try:
+        return repo.release_task(task_id, payload.reason)
     except KeyError as exc:
         raise not_found(exc) from exc
     except ValueError as exc:

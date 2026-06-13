@@ -227,6 +227,38 @@ def test_owner_cancel_task_removes_it_from_queue(client: TestClient) -> None:
     assert events[-1]["event_type"] == "canceled"
 
 
+def test_owner_release_running_task_returns_it_to_queue(client: TestClient) -> None:
+    task = client.post(
+        "/tasks",
+        json={
+            "role": "code_worker",
+            "goal": "Release stuck task",
+            "requirements": ["Lease then release"],
+            "success_criteria": ["Can be leased again"],
+            "estimated_minutes": 15,
+            "memory_refs": [],
+            "branch": "worker/release-stuck-task",
+        },
+    ).json()
+    leased = client.post("/workers/code-1/lease", json={"role": "code_worker", "lease_minutes": 30})
+    assert leased.status_code == 200
+    assert leased.json()["id"] == task["id"]
+
+    released = client.post(f"/owner/tasks/{task['id']}/release", json={"reason": "Worker session died."})
+    assert released.status_code == 200
+    assert released.json()["status"] == "pending"
+    assert released.json()["leased_by"] is None
+    assert released.json()["retry_count"] == 0
+
+    leased_again = client.post("/workers/code-2/lease", json={"role": "code_worker", "lease_minutes": 30})
+    assert leased_again.status_code == 200
+    assert leased_again.json()["id"] == task["id"]
+    assert leased_again.json()["leased_by"] == "code-2"
+
+    events = client.get(f"/tasks/{task['id']}/events").json()
+    assert [event["event_type"] for event in events] == ["created", "leased", "released", "leased"]
+
+
 def test_task_package_includes_memory_refs(client: TestClient) -> None:
     memory_payload = {
         "type": "project_knowledge",

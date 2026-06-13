@@ -350,6 +350,29 @@ class Repository:
             self._add_task_event(task_id, "canceled", message)
         return self.get_task(task_id)
 
+    def release_task(self, task_id: int, reason: str = "") -> dict[str, Any]:
+        task = self.get_task(task_id)
+        if task["status"] != "running":
+            raise ValueError("only running tasks can be released")
+        timestamp = now_iso()
+        with transaction(self.conn):
+            self.conn.execute(
+                """
+                UPDATE tasks
+                SET status = 'pending',
+                    leased_by = NULL,
+                    leased_until = NULL,
+                    updated_at = ?
+                WHERE id = ?
+                """,
+                (timestamp, task_id),
+            )
+            message = "Owner released task lease"
+            if reason:
+                message += f": {reason}"
+            self._add_task_event(task_id, "released", message)
+        return self.get_task(task_id)
+
     def _project_for_task(self, task_id: int) -> dict[str, Any] | None:
         row = self.conn.execute(
             """
