@@ -19,20 +19,55 @@ function New-ApiToken {
     return [Convert]::ToBase64String($bytes).TrimEnd('=').Replace('+', '-').Replace('/', '_')
 }
 
-$existingToken = ssh $Target "if [ -f '$InstallDir/.env' ]; then sed -n 's/^GAME_COMPANY_API_TOKEN=//p' '$InstallDir/.env' | head -n 1; fi" 2>$null
+function Get-RemoteEnvValue {
+    param([string]$Name)
+    $value = ssh $Target "if [ -f '$InstallDir/.env' ]; then sed -n 's/^$Name=//p' '$InstallDir/.env' | head -n 1; fi" 2>$null
+    if ($value) {
+        return $value.Trim()
+    }
+    return ""
+}
+
+function Convert-ToEnvValue {
+    param([string]$Value)
+    $escaped = $Value.Replace("\", "\\")
+    $escaped = $escaped.Replace('"', '\"')
+    $escaped = $escaped.Replace('$', '\$')
+    return '"' + $escaped + '"'
+}
+
+$existingToken = Get-RemoteEnvValue "GAME_COMPANY_API_TOKEN"
 $apiToken = if ($existingToken) { $existingToken.Trim() } else { New-ApiToken }
+$ownerCommand = Get-RemoteEnvValue "GAME_COMPANY_OWNER_COMMAND"
+$workerApiBaseUrl = Get-RemoteEnvValue "GAME_COMPANY_WORKER_API_BASE_URL"
+$workerApiKey = Get-RemoteEnvValue "GAME_COMPANY_WORKER_API_KEY"
+$workerModel = Get-RemoteEnvValue "GAME_COMPANY_WORKER_MODEL"
+$workerTimeout = Get-RemoteEnvValue "GAME_COMPANY_WORKER_TIMEOUT_SECONDS"
+$workerTemperature = Get-RemoteEnvValue "GAME_COMPANY_WORKER_TEMPERATURE"
+
+if (-not $workerApiBaseUrl) { $workerApiBaseUrl = "https://api.openai.com/v1" }
+if (-not $workerTimeout) { $workerTimeout = "120" }
+if (-not $workerTemperature) { $workerTemperature = "0.2" }
 $tmpEnv = New-TemporaryFile
 $tmpArchive = Join-Path ([System.IO.Path]::GetTempPath()) ("ai-game-company-server-" + [System.Guid]::NewGuid().ToString("N") + ".tar.gz")
 $remoteArchive = "/tmp/ai-game-company-server.tar.gz"
 
 $envContent = @"
-GAME_COMPANY_DB_PATH=$InstallDir/data/game_company.sqlite3
-GAME_COMPANY_HOST=0.0.0.0
-GAME_COMPANY_PORT=8080
-GAME_COMPANY_DEFAULT_TASK_MINUTES=15
-GAME_COMPANY_OWNER_RECALL_MINUTES=30
-GAME_COMPANY_API_TOKEN=$apiToken
-GAME_COMPANY_BACKUP_DIR=$InstallDir/backups
+GAME_COMPANY_DB_PATH=$(Convert-ToEnvValue "$InstallDir/data/game_company.sqlite3")
+GAME_COMPANY_HOST=$(Convert-ToEnvValue "0.0.0.0")
+GAME_COMPANY_PORT=$(Convert-ToEnvValue "8080")
+GAME_COMPANY_DEFAULT_TASK_MINUTES=$(Convert-ToEnvValue "15")
+GAME_COMPANY_OWNER_RECALL_MINUTES=$(Convert-ToEnvValue "30")
+GAME_COMPANY_API_TOKEN=$(Convert-ToEnvValue $apiToken)
+GAME_COMPANY_BACKUP_DIR=$(Convert-ToEnvValue "$InstallDir/backups")
+GAME_COMPANY_OWNER_COMMAND=$(Convert-ToEnvValue $ownerCommand)
+GAME_COMPANY_OWNER_TIMEOUT_SECONDS=$(Convert-ToEnvValue "900")
+GAME_COMPANY_OWNER_RUNS_DIR=$(Convert-ToEnvValue "$InstallDir/owner-runs")
+GAME_COMPANY_WORKER_API_BASE_URL=$(Convert-ToEnvValue $workerApiBaseUrl)
+GAME_COMPANY_WORKER_API_KEY=$(Convert-ToEnvValue $workerApiKey)
+GAME_COMPANY_WORKER_MODEL=$(Convert-ToEnvValue $workerModel)
+GAME_COMPANY_WORKER_TIMEOUT_SECONDS=$(Convert-ToEnvValue $workerTimeout)
+GAME_COMPANY_WORKER_TEMPERATURE=$(Convert-ToEnvValue $workerTemperature)
 "@
 [System.IO.File]::WriteAllText($tmpEnv, $envContent, [System.Text.UTF8Encoding]::new($false))
 

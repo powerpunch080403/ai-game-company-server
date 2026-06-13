@@ -74,6 +74,38 @@ Windows PowerShell:
 - `runs/task-{id}/instructions.md`
 - `runs/task-{id}/command.log`
 
+## API Worker
+
+API Worker는 Task Package를 OpenAI-compatible Chat Completions API로 보내고, 응답을 저장한 뒤 Task 결과를 report합니다.
+
+필요한 `.env` 설정:
+
+```env
+GAME_COMPANY_WORKER_API_BASE_URL=https://api.openai.com/v1
+GAME_COMPANY_WORKER_API_KEY=your-api-key
+GAME_COMPANY_WORKER_MODEL=your-worker-model
+```
+
+프롬프트만 생성해서 확인:
+
+```bash
+./scripts/run_api_worker.sh --worker-id api-code-1 --role code_worker --dry-run
+```
+
+특정 Task package만 확인하고 상태를 바꾸지 않기:
+
+```bash
+./scripts/run_api_worker.sh --task-id 1 --dry-run
+```
+
+API 호출 후 report:
+
+```bash
+./scripts/run_api_worker.sh --worker-id api-code-1 --role code_worker
+```
+
+현재 API Worker는 응답 생성과 report까지 담당합니다. 실제 파일 수정, Git branch 생성, 테스트 실행은 다음 단계에서 연결합니다.
+
 ## Owner Run
 
 Owner는 `/owner/runs`로 호출합니다. v1에서는 Owner 프롬프트와 실행 결과를 DB에 저장하고, 실제 CLI 실행은 `.env`의 `GAME_COMPANY_OWNER_COMMAND`로 연결합니다.
