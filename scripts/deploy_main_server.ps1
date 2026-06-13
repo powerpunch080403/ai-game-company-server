@@ -5,6 +5,7 @@ param(
 
 $ErrorActionPreference = "Stop"
 $PSNativeCommandUseErrorActionPreference = $true
+$env:Path = "C:\Program Files\Git\cmd;C:\Program Files\GitHub CLI;" + $env:Path
 
 function New-ApiToken {
     $bytes = New-Object byte[] 32
@@ -24,7 +25,7 @@ $tmpEnv = New-TemporaryFile
 $tmpArchive = Join-Path ([System.IO.Path]::GetTempPath()) ("ai-game-company-server-" + [System.Guid]::NewGuid().ToString("N") + ".tar.gz")
 $remoteArchive = "/tmp/ai-game-company-server.tar.gz"
 
-@"
+$envContent = @"
 GAME_COMPANY_DB_PATH=$InstallDir/data/game_company.sqlite3
 GAME_COMPANY_HOST=0.0.0.0
 GAME_COMPANY_PORT=8080
@@ -32,7 +33,8 @@ GAME_COMPANY_DEFAULT_TASK_MINUTES=15
 GAME_COMPANY_OWNER_RECALL_MINUTES=30
 GAME_COMPANY_API_TOKEN=$apiToken
 GAME_COMPANY_BACKUP_DIR=$InstallDir/backups
-"@ | Set-Content -LiteralPath $tmpEnv -Encoding UTF8
+"@
+[System.IO.File]::WriteAllText($tmpEnv, $envContent, [System.Text.UTF8Encoding]::new($false))
 
 ssh $Target "command -v git >/dev/null && command -v python3 >/dev/null && python3 -m venv --help >/dev/null"
 ssh $Target "mkdir -p '$InstallDir'"
@@ -43,7 +45,19 @@ ssh $Target "rm -rf '$InstallDir/.deploy_tmp' && mkdir -p '$InstallDir/.deploy_t
 scp $tmpEnv "$Target`:$InstallDir/.env"
 Remove-Item -LiteralPath $tmpEnv -Force
 
-ssh $Target "cd '$InstallDir' && chmod +x scripts/*.sh && python3 -m venv .venv && . .venv/bin/activate && python -m pip install --upgrade pip && python -m pip install -r requirements.txt && if [ ! -f data/game_company.sqlite3 ]; then python -m app.seed; fi"
+$setupCommand = @"
+cd '$InstallDir' &&
+sed -i 's/\r$//' scripts/*.sh &&
+chmod +x scripts/*.sh &&
+if ! command -v uv >/dev/null 2>&1 && [ ! -x "`$HOME/.local/bin/uv" ]; then
+  curl -LsSf https://astral.sh/uv/install.sh | sh
+fi &&
+UV_BIN="`$(command -v uv || echo "`$HOME/.local/bin/uv")" &&
+"`$UV_BIN" venv --clear .venv &&
+"`$UV_BIN" pip install -r requirements.txt &&
+if [ ! -f data/game_company.sqlite3 ]; then .venv/bin/python -m app.seed; fi
+"@
+ssh $Target $setupCommand
 
 Write-Host "Deployed to $Target`:$InstallDir"
 Write-Host "External API URL: http://100.92.73.19:8080"
