@@ -373,6 +373,22 @@ class Repository:
             self._add_task_event(task_id, "released", message)
         return self.get_task(task_id)
 
+    def assign_task_to_sub_epic(self, task_id: int, sub_epic_id: int, reason: str = "") -> dict[str, Any]:
+        self.get_task(task_id)
+        if self.conn.execute("SELECT id FROM sub_epics WHERE id = ?", (sub_epic_id,)).fetchone() is None:
+            raise KeyError("sub epic not found")
+        timestamp = now_iso()
+        with transaction(self.conn):
+            self.conn.execute(
+                "UPDATE tasks SET sub_epic_id = ?, updated_at = ? WHERE id = ?",
+                (sub_epic_id, timestamp, task_id),
+            )
+            message = f"Owner assigned task to sub epic {sub_epic_id}"
+            if reason:
+                message += f": {reason}"
+            self._add_task_event(task_id, "assigned", message)
+        return self.get_task(task_id)
+
     def _project_for_task(self, task_id: int) -> dict[str, Any] | None:
         row = self.conn.execute(
             """

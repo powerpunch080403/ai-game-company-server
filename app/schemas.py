@@ -107,3 +107,8 @@ class OwnerTaskCancelRequest(BaseModel):
 
 class OwnerTaskReleaseRequest(BaseModel):
     reason: str = ""
+
+
+class OwnerTaskAssignRequest(BaseModel):
+    sub_epic_id: int
+    reason: str = ""

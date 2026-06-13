@@ -17,6 +17,7 @@ from app.schemas import (
     EpicCreate,
     MemoryCreate,
     OwnerRunCreate,
+    OwnerTaskAssignRequest,
     OwnerTaskCancelRequest,
     OwnerTaskMergeRequest,
     OwnerTaskReleaseRequest,
@@ -474,6 +475,18 @@ def release_owner_task(
         raise not_found(exc) from exc
     except ValueError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+@app.post("/owner/tasks/{task_id}/assign-sub-epic")
+def assign_owner_task_to_sub_epic(
+    task_id: int,
+    payload: OwnerTaskAssignRequest,
+    repo: Repository = Depends(get_repo),
+) -> dict:
+    try:
+        return repo.assign_task_to_sub_epic(task_id, payload.sub_epic_id, payload.reason)
+    except KeyError as exc:
+        raise not_found(exc) from exc
 
 
 @app.post("/owner/runs")

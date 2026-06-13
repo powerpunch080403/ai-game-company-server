@@ -415,6 +415,17 @@ def test_workspace_lease_requires_project_repo_config(client: TestClient) -> Non
     project_review = next(item for item in running_queue.json() if item["task"]["id"] == project_task["id"])["review"]
     assert project_review["workspace_ready"] is True
 
+    assigned = client.post(
+        f"/owner/tasks/{orphan['id']}/assign-sub-epic",
+        json={"sub_epic_id": sub_epic["id"], "reason": "Attach orphan task to configured project."},
+    )
+    assert assigned.status_code == 200
+    assert assigned.json()["sub_epic_id"] == sub_epic["id"]
+
+    queue_after_assign = client.get("/owner/task-queue", params={"status": "pending", "role": "code_worker"})
+    assigned_review = next(item for item in queue_after_assign.json() if item["task"]["id"] == orphan["id"])["review"]
+    assert assigned_review["workspace_ready"] is True
+
 
 def test_api_token_required_when_configured(client: TestClient) -> None:
     original_settings = main_module.settings
