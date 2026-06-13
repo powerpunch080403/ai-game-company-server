@@ -106,6 +106,36 @@ API 호출 후 report:
 
 현재 API Worker는 응답 생성과 report까지 담당합니다. 실제 파일 수정, Git branch 생성, 테스트 실행은 다음 단계에서 연결합니다.
 
+## Git Workspace
+
+Git Workspace Runner는 Task의 `Branch` 값을 사용해 게임 프로젝트 repo에서 `worker/*` 브랜치를 준비합니다.
+
+필요한 `.env` 설정:
+
+```env
+GAME_COMPANY_GAME_REPO_URL=https://github.com/your-account/your-game-repo.git
+GAME_COMPANY_GAME_WORKSPACE=/home/powerpunch/game-workspace
+GAME_COMPANY_GAME_BASE_BRANCH=main
+```
+
+Task 1의 branch 준비:
+
+```bash
+./scripts/prepare_git_workspace.sh --task-id 1
+```
+
+로컬 package 파일로 준비:
+
+```bash
+./scripts/prepare_git_workspace.sh --package runs/api-task-1/task_package.json
+```
+
+안전 규칙:
+
+- Task branch는 반드시 `worker/`로 시작해야 합니다.
+- Workspace가 이미 다른 origin을 바라보면 중단합니다.
+- 기본 branch를 최신화한 뒤 Task branch를 checkout합니다.
+
 ## Owner Run
 
 Owner는 `/owner/runs`로 호출합니다. v1에서는 Owner 프롬프트와 실행 결과를 DB에 저장하고, 실제 CLI 실행은 `.env`의 `GAME_COMPANY_OWNER_COMMAND`로 연결합니다.

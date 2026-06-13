@@ -49,10 +49,15 @@ $workerApiKey = Get-RemoteEnvValue "GAME_COMPANY_WORKER_API_KEY"
 $workerModel = Get-RemoteEnvValue "GAME_COMPANY_WORKER_MODEL"
 $workerTimeout = Get-RemoteEnvValue "GAME_COMPANY_WORKER_TIMEOUT_SECONDS"
 $workerTemperature = Get-RemoteEnvValue "GAME_COMPANY_WORKER_TEMPERATURE"
+$gameRepoUrl = Get-RemoteEnvValue "GAME_COMPANY_GAME_REPO_URL"
+$gameWorkspace = Get-RemoteEnvValue "GAME_COMPANY_GAME_WORKSPACE"
+$gameBaseBranch = Get-RemoteEnvValue "GAME_COMPANY_GAME_BASE_BRANCH"
 
 if (-not $workerApiBaseUrl) { $workerApiBaseUrl = "https://api.openai.com/v1" }
 if (-not $workerTimeout) { $workerTimeout = "120" }
 if (-not $workerTemperature) { $workerTemperature = "0.2" }
+if (-not $gameWorkspace) { $gameWorkspace = "$InstallDir/game-workspace" }
+if (-not $gameBaseBranch) { $gameBaseBranch = "main" }
 $tmpEnv = New-TemporaryFile
 $tmpArchive = Join-Path ([System.IO.Path]::GetTempPath()) ("ai-game-company-server-" + [System.Guid]::NewGuid().ToString("N") + ".tar.gz")
 $remoteArchive = "/tmp/ai-game-company-server.tar.gz"
@@ -73,6 +78,9 @@ GAME_COMPANY_WORKER_API_KEY=$(Convert-ToEnvValue $workerApiKey)
 GAME_COMPANY_WORKER_MODEL=$(Convert-ToEnvValue $workerModel)
 GAME_COMPANY_WORKER_TIMEOUT_SECONDS=$(Convert-ToEnvValue $workerTimeout)
 GAME_COMPANY_WORKER_TEMPERATURE=$(Convert-ToEnvValue $workerTemperature)
+GAME_COMPANY_GAME_REPO_URL=$(Convert-ToEnvValue $gameRepoUrl)
+GAME_COMPANY_GAME_WORKSPACE=$(Convert-ToEnvValue $gameWorkspace)
+GAME_COMPANY_GAME_BASE_BRANCH=$(Convert-ToEnvValue $gameBaseBranch)
 "@
 [System.IO.File]::WriteAllText($tmpEnv, $envContent, [System.Text.UTF8Encoding]::new($false))
 
