@@ -107,6 +107,34 @@ API 호출 후 report:
 
 현재 API Worker는 응답 생성과 report까지 담당합니다. 실제 파일 수정, Git branch 생성, 테스트 실행은 다음 단계에서 연결합니다.
 
+## Workspace Worker
+
+Workspace Worker는 Task를 lease하고, Project repo의 `worker/*` branch를 준비한 뒤, 지정한 명령을 실제 게임 workspace에서 실행합니다. 변경 파일이 있으면 commit하고 Task report를 서버에 저장합니다.
+
+예시:
+
+```bash
+./scripts/run_workspace_worker.sh \
+  --worker-id workspace-code-1 \
+  --role code_worker \
+  --command "python scripts/apply_task.py"
+```
+
+특정 Task를 report 없이 실험:
+
+```bash
+./scripts/run_workspace_worker.sh \
+  --task-id 2 \
+  --command "mkdir -p docs && echo hello > docs/worker-test.md"
+```
+
+안전 규칙:
+
+- Task branch는 `worker/*`여야 합니다.
+- 실행 전 workspace가 dirty면 기본적으로 중단합니다.
+- 명령 성공 후 변경 파일이 있으면 자동 commit합니다.
+- `--task-id` 모드는 기본적으로 report하지 않습니다.
+
 ## Git Workspace
 
 Git Workspace Runner는 Task의 `Branch` 값을 사용해 게임 프로젝트 repo에서 `worker/*` 브랜치를 준비합니다.
