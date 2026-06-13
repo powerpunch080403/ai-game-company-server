@@ -1,7 +1,6 @@
 param(
     [string]$Target = "powerpunch@100.92.73.19",
-    [string]$InstallDir = "/home/powerpunch/ai-game-company-server",
-    [string]$RepoUrl = "https://github.com/powerpunch080403/ai-game-company-server.git"
+    [string]$InstallDir = "/home/powerpunch/ai-game-company-server"
 )
 
 $ErrorActionPreference = "Stop"
@@ -22,6 +21,8 @@ function New-ApiToken {
 $existingToken = ssh $Target "if [ -f '$InstallDir/.env' ]; then sed -n 's/^GAME_COMPANY_API_TOKEN=//p' '$InstallDir/.env' | head -n 1; fi" 2>$null
 $apiToken = if ($existingToken) { $existingToken.Trim() } else { New-ApiToken }
 $tmpEnv = New-TemporaryFile
+$tmpArchive = Join-Path ([System.IO.Path]::GetTempPath()) ("ai-game-company-server-" + [System.Guid]::NewGuid().ToString("N") + ".tar.gz")
+$remoteArchive = "/tmp/ai-game-company-server.tar.gz"
 
 @"
 GAME_COMPANY_DB_PATH=$InstallDir/data/game_company.sqlite3
@@ -35,7 +36,10 @@ GAME_COMPANY_BACKUP_DIR=$InstallDir/backups
 
 ssh $Target "command -v git >/dev/null && command -v python3 >/dev/null && python3 -m venv --help >/dev/null"
 ssh $Target "mkdir -p '$InstallDir'"
-ssh $Target "if [ -d '$InstallDir/.git' ]; then cd '$InstallDir' && git pull --ff-only; else rm -rf '$InstallDir'/* && git clone '$RepoUrl' '$InstallDir'; fi"
+git archive --format=tar.gz -o $tmpArchive HEAD
+scp $tmpArchive "$Target`:$remoteArchive"
+Remove-Item -LiteralPath $tmpArchive -Force
+ssh $Target "rm -rf '$InstallDir/.deploy_tmp' && mkdir -p '$InstallDir/.deploy_tmp' && tar -xzf '$remoteArchive' -C '$InstallDir/.deploy_tmp' && find '$InstallDir' -mindepth 1 -maxdepth 1 ! -name data ! -name backups ! -name .env ! -name .deploy_tmp -exec rm -rf {} + && cp -a '$InstallDir/.deploy_tmp/.' '$InstallDir/' && rm -rf '$InstallDir/.deploy_tmp' '$remoteArchive'"
 scp $tmpEnv "$Target`:$InstallDir/.env"
 Remove-Item -LiteralPath $tmpEnv -Force
 
