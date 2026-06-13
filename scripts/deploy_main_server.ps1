@@ -1,10 +1,11 @@
 param(
     [string]$Target = "powerpunch@100.92.73.19",
-    [string]$InstallDir = "/srv/ai-game-company-server",
+    [string]$InstallDir = "/home/powerpunch/ai-game-company-server",
     [string]$RepoUrl = "https://github.com/powerpunch080403/ai-game-company-server.git"
 )
 
 $ErrorActionPreference = "Stop"
+$PSNativeCommandUseErrorActionPreference = $true
 
 function New-ApiToken {
     $bytes = New-Object byte[] 32
@@ -32,8 +33,8 @@ GAME_COMPANY_API_TOKEN=$apiToken
 GAME_COMPANY_BACKUP_DIR=$InstallDir/backups
 "@ | Set-Content -LiteralPath $tmpEnv -Encoding UTF8
 
-ssh $Target "sudo apt-get update && sudo apt-get install -y git python3-venv python3-pip sqlite3"
-ssh $Target "sudo mkdir -p '$InstallDir' && sudo chown `$(id -un):`$(id -gn) '$InstallDir'"
+ssh $Target "command -v git >/dev/null && command -v python3 >/dev/null && python3 -m venv --help >/dev/null"
+ssh $Target "mkdir -p '$InstallDir'"
 ssh $Target "if [ -d '$InstallDir/.git' ]; then cd '$InstallDir' && git pull --ff-only; else rm -rf '$InstallDir'/* && git clone '$RepoUrl' '$InstallDir'; fi"
 scp $tmpEnv "$Target`:$InstallDir/.env"
 Remove-Item -LiteralPath $tmpEnv -Force

@@ -75,7 +75,7 @@ Windows PowerShell:
 
 ## Ubuntu 메인 서버 배포 초안
 
-현재 추천 배포 경로는 `/srv/ai-game-company-server`입니다.
+현재 추천 배포 경로는 sudo 없이 운영 가능한 `/home/powerpunch/ai-game-company-server`입니다.
 
 Windows 노트북에서 메인컴퓨터로 배포:
 
