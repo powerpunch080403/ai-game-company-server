@@ -80,6 +80,14 @@ def get_project(project_id: int, repo: Repository = Depends(get_repo)) -> dict:
         raise not_found(exc) from exc
 
 
+@app.get("/projects/{project_id}/tree")
+def get_project_tree(project_id: int, repo: Repository = Depends(get_repo)) -> dict:
+    try:
+        return repo.get_project_tree(project_id)
+    except KeyError as exc:
+        raise not_found(exc) from exc
+
+
 @app.patch("/projects/{project_id}/config")
 def update_project_config(project_id: int, payload: ProjectConfigUpdate, repo: Repository = Depends(get_repo)) -> dict:
     try:
@@ -161,6 +169,14 @@ def get_task_package(task_id: int, repo: Repository = Depends(get_repo)) -> dict
 def list_task_reports(task_id: int, repo: Repository = Depends(get_repo)) -> list[dict]:
     try:
         return repo.list_task_reports(task_id)
+    except KeyError as exc:
+        raise not_found(exc) from exc
+
+
+@app.get("/tasks/{task_id}/events")
+def list_task_events(task_id: int, repo: Repository = Depends(get_repo)) -> list[dict]:
+    try:
+        return repo.list_task_events(task_id)
     except KeyError as exc:
         raise not_found(exc) from exc
 

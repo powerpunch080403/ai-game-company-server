@@ -87,6 +87,10 @@ def test_task_lifecycle(client: TestClient) -> None:
     assert reports.json()[0]["summary"] == "Boss FSM implemented."
     assert reports.json()[0]["files_changed"] == ["Assets/Scripts/Boss/BossFsm.cs"]
 
+    events = client.get(f"/tasks/{leased_task['id']}/events")
+    assert events.status_code == 200
+    assert [event["event_type"] for event in events.json()] == ["created", "leased", "reported"]
+
 
 def test_memory_search_by_tag(client: TestClient) -> None:
     payload = {
@@ -191,6 +195,13 @@ def test_project_config_flows_into_task_package(client: TestClient) -> None:
     fetched = client.get(f"/projects/{project_id}")
     assert fetched.status_code == 200
     assert fetched.json()["workspace_path"] == "/tmp/updated-game-workspace"
+
+    tree = client.get(f"/projects/{project_id}/tree")
+    assert tree.status_code == 200
+    body = tree.json()
+    assert body["epics"][0]["name"] == "Combat"
+    assert body["epics"][0]["sub_epics"][0]["name"] == "Player Combat"
+    assert body["epics"][0]["sub_epics"][0]["tasks"][0]["goal"] == "Create attack input stub"
 
 
 def test_api_token_required_when_configured(client: TestClient) -> None:

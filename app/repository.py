@@ -77,6 +77,51 @@ class Repository:
         rows = self.conn.execute("SELECT * FROM projects ORDER BY id ASC").fetchall()
         return [row_to_dict(row) or {} for row in rows]
 
+    def get_project_tree(self, project_id: int) -> dict[str, Any]:
+        project = self.get_project(project_id)
+        epics = [
+            row_to_dict(row) or {}
+            for row in self.conn.execute(
+                "SELECT * FROM epics WHERE project_id = ? ORDER BY id ASC",
+                (project_id,),
+            ).fetchall()
+        ]
+        epic_ids = [epic["id"] for epic in epics]
+        if not epic_ids:
+            return {**project, "epics": []}
+
+        placeholders = ",".join("?" for _ in epic_ids)
+        sub_epics = [
+            row_to_dict(row) or {}
+            for row in self.conn.execute(
+                f"SELECT * FROM sub_epics WHERE epic_id IN ({placeholders}) ORDER BY id ASC",
+                epic_ids,
+            ).fetchall()
+        ]
+        sub_epic_ids = [sub_epic["id"] for sub_epic in sub_epics]
+        tasks_by_sub_epic: dict[int, list[dict[str, Any]]] = {sub_epic["id"]: [] for sub_epic in sub_epics}
+        if sub_epic_ids:
+            task_placeholders = ",".join("?" for _ in sub_epic_ids)
+            for row in self.conn.execute(
+                f"SELECT * FROM tasks WHERE sub_epic_id IN ({task_placeholders}) ORDER BY id ASC",
+                sub_epic_ids,
+            ).fetchall():
+                task = row_to_dict(row) or {}
+                tasks_by_sub_epic[task["sub_epic_id"]].append(task)
+
+        sub_epics_by_epic: dict[int, list[dict[str, Any]]] = {epic["id"]: [] for epic in epics}
+        for sub_epic in sub_epics:
+            sub_epics_by_epic[sub_epic["epic_id"]].append(
+                {**sub_epic, "tasks": tasks_by_sub_epic[sub_epic["id"]]}
+            )
+        return {
+            **project,
+            "epics": [
+                {**epic, "sub_epics": sub_epics_by_epic[epic["id"]]}
+                for epic in epics
+            ],
+        }
+
     def update_project_config(self, project_id: int, payload: ProjectConfigUpdate) -> dict[str, Any]:
         self.get_project(project_id)
         timestamp = now_iso()
@@ -235,6 +280,14 @@ class Repository:
         self.get_task(task_id)
         rows = self.conn.execute(
             "SELECT * FROM worker_reports WHERE task_id = ? ORDER BY id DESC",
+            (task_id,),
+        ).fetchall()
+        return [row_to_dict(row) or {} for row in rows]
+
+    def list_task_events(self, task_id: int) -> list[dict[str, Any]]:
+        self.get_task(task_id)
+        rows = self.conn.execute(
+            "SELECT * FROM task_events WHERE task_id = ? ORDER BY id ASC",
             (task_id,),
         ).fetchall()
         return [row_to_dict(row) or {} for row in rows]
