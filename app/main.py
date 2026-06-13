@@ -124,6 +124,41 @@ def collect_merge_candidates(repo: Repository) -> list[dict[str, Any]]:
     return candidates
 
 
+def build_task_queue_review(package: dict[str, Any]) -> dict[str, Any]:
+    task = package["task"]
+    project = package.get("project")
+    reasons: list[str] = []
+    warnings: list[str] = []
+    if task["status"] not in {"pending", "running"}:
+        reasons.append("task is not queued or running")
+    if not task["branch"].startswith("worker/"):
+        reasons.append("task branch must start with worker/")
+    if not project:
+        reasons.append("task is not attached to a project")
+    else:
+        if not project.get("repo_url"):
+            reasons.append("project repo_url is required")
+        if not project.get("workspace_path"):
+            reasons.append("project workspace_path is required")
+        if not project.get("base_branch"):
+            warnings.append("project base_branch is empty; main will be assumed by tools")
+    if not task["requirements"]:
+        warnings.append("task has no requirements")
+    if not task["success_criteria"]:
+        warnings.append("task has no success criteria")
+    return {
+        "workspace_ready": not reasons,
+        "reasons": reasons,
+        "warnings": warnings,
+        "task_id": task["id"],
+        "task_status": task["status"],
+        "goal": task["goal"],
+        "branch": task["branch"],
+        "project_id": project["id"] if project else None,
+        "project_name": project["name"] if project else None,
+    }
+
+
 @app.middleware("http")
 async def require_api_token(request: Request, call_next):
     if settings.api_token and request.url.path not in PUBLIC_PATHS:
@@ -323,6 +358,22 @@ def owner_task_history(
 @app.get("/owner/task-history/summary")
 def owner_task_history_summary(repo: Repository = Depends(get_repo)) -> list[dict]:
     return repo.task_history_summary()
+
+
+@app.get("/owner/task-queue")
+def owner_task_queue(
+    status: str = Query(default="pending"),
+    role: str | None = Query(default=None),
+    repo: Repository = Depends(get_repo),
+) -> list[dict]:
+    items = []
+    for task in repo.list_tasks(status=status, role=role):
+        try:
+            package = repo.get_task_package(task["id"])
+        except KeyError:
+            continue
+        items.append({"task": task, "review": build_task_queue_review(package)})
+    return items
 
 
 @app.get("/owner/merge-candidates")

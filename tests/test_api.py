@@ -404,6 +404,17 @@ def test_workspace_lease_requires_project_repo_config(client: TestClient) -> Non
     assert leased.json()["id"] == project_task["id"]
     assert client.get(f"/tasks/{orphan['id']}").json()["status"] == "pending"
 
+    queue = client.get("/owner/task-queue", params={"status": "pending", "role": "code_worker"})
+    assert queue.status_code == 200
+    orphan_review = next(item for item in queue.json() if item["task"]["id"] == orphan["id"])["review"]
+    assert orphan_review["workspace_ready"] is False
+    assert "task is not attached to a project" in orphan_review["reasons"]
+
+    running_queue = client.get("/owner/task-queue", params={"status": "running", "role": "code_worker"})
+    assert running_queue.status_code == 200
+    project_review = next(item for item in running_queue.json() if item["task"]["id"] == project_task["id"])["review"]
+    assert project_review["workspace_ready"] is True
+
 
 def test_api_token_required_when_configured(client: TestClient) -> None:
     original_settings = main_module.settings
