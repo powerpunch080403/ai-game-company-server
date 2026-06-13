@@ -24,8 +24,11 @@ function Get-RemoteEnvValue {
     $value = ssh $Target "if [ -f '$InstallDir/.env' ]; then sed -n 's/^$Name=//p' '$InstallDir/.env' | head -n 1; fi" 2>$null
     if ($value) {
         $clean = $value.Trim()
-        if (($clean.StartsWith('"') -and $clean.EndsWith('"')) -or ($clean.StartsWith("'") -and $clean.EndsWith("'"))) {
-            return $clean.Substring(1, $clean.Length - 2)
+        for ($i = 0; $i -lt 5; $i++) {
+            $clean = $clean.Replace('\"', '"').Trim()
+            if (($clean.StartsWith('"') -and $clean.EndsWith('"')) -or ($clean.StartsWith("'") -and $clean.EndsWith("'"))) {
+                $clean = $clean.Substring(1, $clean.Length - 2)
+            }
         }
         return $clean
     }
@@ -34,10 +37,8 @@ function Get-RemoteEnvValue {
 
 function Convert-ToEnvValue {
     param([string]$Value)
-    $escaped = $Value.Replace("\", "\\")
-    $escaped = $escaped.Replace('"', '\"')
-    $escaped = $escaped.Replace('$', '\$')
-    return '"' + $escaped + '"'
+    $escaped = $Value.Replace("'", "'\''")
+    return "'" + $escaped + "'"
 }
 
 $existingToken = Get-RemoteEnvValue "GAME_COMPANY_API_TOKEN"
