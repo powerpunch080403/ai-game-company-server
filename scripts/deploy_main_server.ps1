@@ -23,7 +23,11 @@ function Get-RemoteEnvValue {
     param([string]$Name)
     $value = ssh $Target "if [ -f '$InstallDir/.env' ]; then sed -n 's/^$Name=//p' '$InstallDir/.env' | head -n 1; fi" 2>$null
     if ($value) {
-        return $value.Trim()
+        $clean = $value.Trim()
+        if (($clean.StartsWith('"') -and $clean.EndsWith('"')) -or ($clean.StartsWith("'") -and $clean.EndsWith("'"))) {
+            return $clean.Substring(1, $clean.Length - 2)
+        }
+        return $clean
     }
     return ""
 }
