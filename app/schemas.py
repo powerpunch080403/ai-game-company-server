@@ -68,6 +68,10 @@ class WorkerLeaseRequest(BaseModel):
     lease_minutes: int = Field(default=30, ge=1, le=240)
 
 
+class WorkerTaskClaimRequest(BaseModel):
+    lease_minutes: int = Field(default=30, ge=1, le=240)
+
+
 class WorkerReportCreate(BaseModel):
     status: TaskStatus
     estimated_minutes: int = Field(ge=1)

@@ -386,8 +386,44 @@ class Repository:
             self._add_task_event(task_id, "leased", f"Leased by {worker_id}")
         return self.get_task(task_id)
 
+    def claim_task(self, task_id: int, worker_id: str, lease_minutes: int) -> dict[str, Any]:
+        timestamp = now_iso()
+        lease_until = (datetime.now(UTC) + timedelta(minutes=lease_minutes)).isoformat(timespec="seconds")
+        with transaction(self.conn):
+            row = self.conn.execute("SELECT * FROM tasks WHERE id = ?", (task_id,)).fetchone()
+            if row is None:
+                raise KeyError("task not found")
+            task = row_to_dict(row) or {}
+            if task["status"] == "success":
+                raise ValueError("successful task cannot be claimed")
+            if task["status"] in {"failed", "blocked"}:
+                raise ValueError("failed or blocked task must be retried before claim")
+            if (
+                task["status"] == "running"
+                and task["leased_by"] != worker_id
+                and task["leased_until"] is not None
+                and task["leased_until"] >= timestamp
+            ):
+                raise ValueError("task is already leased by another worker")
+            self.conn.execute(
+                """
+                UPDATE tasks
+                SET status = 'running',
+                    leased_by = ?,
+                    leased_until = ?,
+                    started_at = COALESCE(started_at, ?),
+                    updated_at = ?
+                WHERE id = ?
+                """,
+                (worker_id, lease_until, timestamp, timestamp, task_id),
+            )
+            self._add_task_event(task_id, "leased", f"Leased by {worker_id}")
+        return self.get_task(task_id)
+
     def complete_task(self, task_id: int, worker_id: str, payload: WorkerReportCreate) -> dict[str, Any]:
         task = self.get_task(task_id)
+        if task["status"] != "running" or task["leased_by"] != worker_id:
+            raise ValueError("task must be leased by the reporting worker")
         timestamp = now_iso()
         with transaction(self.conn):
             report_cur = self.conn.execute(

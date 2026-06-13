@@ -110,6 +110,12 @@ def build_workspace_report(
 
 def load_or_lease_package(args: argparse.Namespace) -> tuple[dict[str, Any], bool]:
     if args.task_id:
+        if args.report and not args.no_report:
+            request_json(
+                "POST",
+                f"{args.server}/workers/{args.worker_id}/tasks/{args.task_id}/claim",
+                json={"lease_minutes": args.lease_minutes},
+            )
         return request_json("GET", f"{args.server}/tasks/{args.task_id}/package"), False
     leased = request_json(
         "POST",

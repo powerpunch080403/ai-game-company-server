@@ -25,6 +25,7 @@ from app.schemas import (
     TaskCreate,
     WorkerLeaseRequest,
     WorkerReportCreate,
+    WorkerTaskClaimRequest,
 )
 
 settings = load_settings()
@@ -264,6 +265,21 @@ def lease_task(worker_id: str, payload: WorkerLeaseRequest, repo: Repository = D
     return task
 
 
+@app.post("/workers/{worker_id}/tasks/{task_id}/claim")
+def claim_task(
+    worker_id: str,
+    task_id: int,
+    payload: WorkerTaskClaimRequest,
+    repo: Repository = Depends(get_repo),
+) -> dict:
+    try:
+        return repo.claim_task(task_id, worker_id, payload.lease_minutes)
+    except KeyError as exc:
+        raise not_found(exc) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
 @app.post("/workers/{worker_id}/tasks/{task_id}/report")
 def report_task(
     worker_id: str,
@@ -275,6 +291,8 @@ def report_task(
         return repo.complete_task(task_id, worker_id, payload)
     except KeyError as exc:
         raise not_found(exc) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
 
 
 @app.get("/owner/dashboard")

@@ -110,6 +110,40 @@ def test_task_lifecycle(client: TestClient) -> None:
     assert [event["event_type"] for event in events.json()] == ["created", "leased", "reported"]
 
 
+def test_report_requires_worker_lease(client: TestClient) -> None:
+    task = client.post(
+        "/tasks",
+        json={
+            "role": "code_worker",
+            "goal": "Reject unleased report",
+            "requirements": ["Report without lease"],
+            "success_criteria": ["Rejected"],
+            "estimated_minutes": 15,
+            "memory_refs": [],
+            "branch": "worker/reject-unleased-report",
+        },
+    ).json()
+    report = {
+        "status": "success",
+        "estimated_minutes": 15,
+        "actual_minutes": 1,
+        "productive_minutes": 1,
+        "error_minutes": 0,
+        "retry_count": 0,
+        "files_changed": [],
+        "tests": [],
+        "summary": "Should not be accepted.",
+        "issues": "",
+    }
+    rejected = client.post(f"/workers/code-1/tasks/{task['id']}/report", json=report)
+    assert rejected.status_code == 409
+
+    claimed = client.post(f"/workers/code-1/tasks/{task['id']}/claim", json={"lease_minutes": 30})
+    assert claimed.status_code == 200
+    accepted = client.post(f"/workers/code-1/tasks/{task['id']}/report", json=report)
+    assert accepted.status_code == 200
+
+
 def test_memory_search_by_tag(client: TestClient) -> None:
     payload = {
         "type": "project_rules",
@@ -368,6 +402,8 @@ def test_owner_task_merge_api_reviews_and_merges_successful_task(client: TestCli
     (workspace / "notes.txt").write_text("merged by api\n", encoding="utf-8")
     commit_changes(workspace, package["task"], ["notes.txt"])
     push_branch(workspace, "worker/merge-api-notes")
+    claimed = client.post(f"/workers/code-1/tasks/{task['id']}/claim", json={"lease_minutes": 30})
+    assert claimed.status_code == 200
     report = {
         "status": "success",
         "estimated_minutes": 15,
