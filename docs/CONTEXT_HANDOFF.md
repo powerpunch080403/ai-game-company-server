@@ -292,8 +292,17 @@ Implemented after the baseline design:
   - `scripts/run_discord_bot.*` runs dry-run routing from CLI.
   - It queries `/discord/mappings` with guild/channel/thread filters or accepts
     `--mapping-json` for offline dry-runs.
-  - It does not connect to Discord Gateway yet; `DISCORD_BOT_TOKEN` is reserved
-    for the later runtime adapter.
+- Discord Gateway runtime:
+  - `app.discord_gateway` is a minimal Discord Gateway runtime using
+    `discord.py`.
+  - `scripts/run_discord_gateway.*` starts the runtime.
+  - It ignores bot/DM/empty messages, resolves channel/thread ids, looks up
+    stored mappings, routes messages through `app.discord_bot`, and replies with
+    short status messages.
+  - It can submit Owner-routed messages to `/owner/runs` with
+    `--submit-owner-run`; submission defaults to `dry_run=true`.
+  - `--execute-owner-run` is required to request `dry_run=false`.
+  - It still needs real Discord server testing and richer approval handling.
 - Test Runner report mapping:
   - `app.test_runner_report.map_test_runner_report` converts local
     `test-runner-report.json` files into `WorkerReportCreate` JSON.

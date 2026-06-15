@@ -34,6 +34,8 @@ The server can already run the core loop:
 23. Connect Discord bot dry-run routing to the context-status endpoint.
 24. Add Discord bot dry-run Owner run payload and optional safe submission to
     `/owner/runs`.
+25. Add Discord Gateway runtime skeleton that reuses the dry-run router and can
+    reply to mapped messages.
 
 ## Next Work While Main Computer Is Unavailable
 
@@ -131,9 +133,11 @@ Most of this is already implemented.
    - Discord bot dry-run now builds `owner_run_payload` for Owner-routed
      messages and can submit it to `/owner/runs` as `dry_run=true` unless
      explicitly told to execute.
-   - Next: add a real Discord Gateway adapter after bot token/server setup.
-   - Next: connect Owner-room/project-owner messages to Owner run or approval
-     workflows.
+   - Discord Gateway runtime skeleton is implemented with message receive,
+     mapping lookup, context-status replies, and optional safe Owner run
+     submission.
+   - Next: test the Gateway runtime in a real Discord server.
+   - Next: connect natural-language approval conversations.
 
 ## v1.5 Later
 

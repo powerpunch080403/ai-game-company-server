@@ -39,14 +39,15 @@ Implemented:
 - FastAPI routes split under `app/api/routes`.
 - Discord mapping API.
 - Discord bot dry-run router.
+- Discord Gateway runtime skeleton.
 - Discord context compaction API with 260k estimated-token threshold.
 - Discord dry-run bridge to `/owner/runs`.
 - Engine-agnostic project template scaffold.
 
 Not implemented yet:
 
-- Real Discord Gateway connection.
-- Automatic Discord message ingestion.
+- Production-tested Discord Gateway deployment.
+- Automatic Discord thread history fetching.
 - Automatic LLM summarization of raw Discord threads.
 - Artifact streaming upload for very large files.
 - Real always-on systemd deployment.
@@ -181,8 +182,8 @@ Test Runner:
 Discord Bot:
 
 - v1 operator console bridge.
-- Currently implemented as a dry-run router.
-- Real Discord Gateway runtime is the next major Discord step.
+- Dry-run router is implemented.
+- Gateway runtime skeleton is implemented.
 
 ## Worker Runner
 
@@ -458,6 +459,46 @@ This submits `dry_run=true` by default. Add `--execute-owner-run` only after
 `GAME_COMPANY_OWNER_COMMAND` is configured and you really want the command to
 run.
 
+## Discord Gateway Runtime
+
+Install dependencies and set tokens:
+
+```env
+DISCORD_BOT_TOKEN=your-discord-bot-token
+GAME_COMPANY_DISCORD_SERVER_TOKEN=owner-or-admin-token-for-server-api
+GAME_COMPANY_SERVER=http://127.0.0.1:8080
+```
+
+Run the Gateway runtime:
+
+```bash
+./scripts/run_discord_gateway.sh
+```
+
+Windows:
+
+```powershell
+.\scripts\run_discord_gateway.ps1
+```
+
+Optional safe Owner run storage:
+
+```bash
+./scripts/run_discord_gateway.sh --submit-owner-run
+```
+
+This stores Owner-routed messages as `dry_run=true`. Add `--execute-owner-run`
+only after `GAME_COMPANY_OWNER_COMMAND` is configured and you really want the
+Owner command to run.
+
+Discord requirements:
+
+- The bot must be invited to the Discord server.
+- Message Content Intent must be enabled for the bot application.
+- The bot must be able to read messages and send messages in mapped channels or
+  threads.
+- Channel/thread ids must be registered through `/discord/mappings`.
+
 ## Artifact API
 
 Create metadata:
@@ -537,9 +578,8 @@ without relying on remote SSH.
 
 Recommended next steps:
 
-1. Add real Discord Gateway runtime.
-2. Reply in Discord with routing, context, and Owner run results.
-3. Connect approval conversations.
+1. Test Discord Gateway runtime in a real Discord server.
+2. Connect approval conversations.
+3. Add richer Discord replies for Owner run results and errors.
 4. Add artifact streaming upload.
 5. Add systemd unit files after always-on mode is approved.
-
