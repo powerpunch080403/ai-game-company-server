@@ -4,6 +4,7 @@ import json
 import sqlite3
 import uuid
 from datetime import UTC, datetime, timedelta
+from hashlib import sha256
 from typing import Any
 
 from app.db import transaction
@@ -11,6 +12,8 @@ from app.schemas import (
     ApprovalCreate,
     ApprovalDecision,
     ArtifactCreate,
+    DiscordMappingArchive,
+    DiscordMappingUpsert,
     EpicCreate,
     MachineHeartbeat,
     MachineUpsert,
@@ -29,6 +32,20 @@ from app.schemas import (
 
 def now_iso() -> str:
     return datetime.now(UTC).isoformat(timespec="seconds")
+
+
+def stable_discord_mapping_id(payload: DiscordMappingUpsert) -> str:
+    thread_id = payload.discord_thread_id or "channel"
+    raw = "|".join(
+        [
+            payload.discord_guild_id,
+            payload.discord_channel_id,
+            thread_id,
+            payload.conversation_kind,
+            payload.thread_role,
+        ]
+    )
+    return f"discord_{sha256(raw.encode('utf-8')).hexdigest()[:16]}"
 
 
 def row_to_dict(row: sqlite3.Row | None) -> dict[str, Any] | None:
@@ -548,6 +565,116 @@ class Repository:
         )
         self.conn.commit()
         return self.get_approval(approval_id)
+
+    def upsert_discord_mapping(
+        self,
+        payload: DiscordMappingUpsert,
+        mapping_id: str | None = None,
+    ) -> dict[str, Any]:
+        if payload.project_id is not None:
+            self.get_project(payload.project_id)
+        resolved_mapping_id = mapping_id or payload.mapping_id or stable_discord_mapping_id(payload)
+        timestamp = now_iso()
+        try:
+            self.conn.execute(
+                """
+                INSERT INTO discord_mappings (
+                    mapping_id, discord_guild_id, discord_channel_id,
+                    discord_thread_id, project_id, conversation_kind, thread_role,
+                    created_by, summary_memory_key, notes, created_at, updated_at,
+                    archived_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)
+                ON CONFLICT(mapping_id) DO UPDATE SET
+                    discord_guild_id = excluded.discord_guild_id,
+                    discord_channel_id = excluded.discord_channel_id,
+                    discord_thread_id = excluded.discord_thread_id,
+                    project_id = excluded.project_id,
+                    conversation_kind = excluded.conversation_kind,
+                    thread_role = excluded.thread_role,
+                    created_by = excluded.created_by,
+                    summary_memory_key = excluded.summary_memory_key,
+                    notes = excluded.notes,
+                    updated_at = excluded.updated_at
+                """,
+                (
+                    resolved_mapping_id,
+                    payload.discord_guild_id,
+                    payload.discord_channel_id,
+                    payload.discord_thread_id,
+                    payload.project_id,
+                    payload.conversation_kind,
+                    payload.thread_role,
+                    payload.created_by,
+                    payload.summary_memory_key,
+                    payload.notes,
+                    timestamp,
+                    timestamp,
+                ),
+            )
+        except sqlite3.IntegrityError as exc:
+            raise ValueError("discord mapping location already exists") from exc
+        self.conn.commit()
+        return self.get_discord_mapping(resolved_mapping_id)
+
+    def get_discord_mapping(self, mapping_id: str) -> dict[str, Any]:
+        row = self.conn.execute(
+            "SELECT * FROM discord_mappings WHERE mapping_id = ?",
+            (mapping_id,),
+        ).fetchone()
+        if row is None:
+            raise KeyError("discord mapping not found")
+        return row_to_dict(row) or {}
+
+    def list_discord_mappings(
+        self,
+        project_id: int | None = None,
+        conversation_kind: str | None = None,
+        thread_role: str | None = None,
+        discord_guild_id: str | None = None,
+        active: bool | None = None,
+    ) -> list[dict[str, Any]]:
+        clauses: list[str] = []
+        params: list[Any] = []
+        if project_id is not None:
+            clauses.append("project_id = ?")
+            params.append(project_id)
+        if conversation_kind:
+            clauses.append("conversation_kind = ?")
+            params.append(conversation_kind)
+        if thread_role:
+            clauses.append("thread_role = ?")
+            params.append(thread_role)
+        if discord_guild_id:
+            clauses.append("discord_guild_id = ?")
+            params.append(discord_guild_id)
+        if active is True:
+            clauses.append("archived_at IS NULL")
+        elif active is False:
+            clauses.append("archived_at IS NOT NULL")
+        where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
+        rows = self.conn.execute(
+            f"SELECT * FROM discord_mappings {where} ORDER BY created_at DESC, mapping_id ASC",
+            params,
+        ).fetchall()
+        return [row_to_dict(row) or {} for row in rows]
+
+    def archive_discord_mapping(self, mapping_id: str, payload: DiscordMappingArchive) -> dict[str, Any]:
+        self.get_discord_mapping(mapping_id)
+        timestamp = now_iso()
+        note_suffix = f"\nArchive reason: {payload.reason}" if payload.reason else ""
+        self.conn.execute(
+            """
+            UPDATE discord_mappings
+            SET archived_at = COALESCE(archived_at, ?),
+                notes = notes || ?,
+                updated_at = ?
+            WHERE mapping_id = ?
+            """,
+            (timestamp, note_suffix, timestamp, mapping_id),
+        )
+        self.conn.commit()
+        return self.get_discord_mapping(mapping_id)
 
     def get_project_tree(self, project_id: int) -> dict[str, Any]:
         project = self.get_project(project_id)

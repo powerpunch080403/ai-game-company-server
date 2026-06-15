@@ -17,6 +17,7 @@ The server can already run the core loop:
 9. Track worker/machine heartbeat and worker last-seen activity.
 10. Store artifact metadata and raw artifact files.
 11. Store approval requests and one-way approval decisions.
+12. Store Discord guild/channel/thread mappings for project operation rooms.
 
 ## Next Work While Main Computer Is Unavailable
 
@@ -127,4 +128,4 @@ These do not require the main computer:
   memory ingestion.
 - Add visual artifact and MCP tool operation schemas before connecting Blender
   or game engine tools.
-- Add Discord mapping APIs before implementing the Discord bot.
+- Implement the Discord bot against the stored Discord mapping APIs.

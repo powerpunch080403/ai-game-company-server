@@ -18,6 +18,24 @@ MemoryType = Literal[
 WorkerRole = Literal["code_worker", "image_worker", "voice_worker", "test_runner"]
 ModelProfileRole = Literal["owner", "code_worker", "image_worker", "voice_worker", "test_runner"]
 TaskStatus = Literal["pending", "running", "success", "failed", "blocked", "canceled"]
+DiscordConversationKind = Literal[
+    "owner_room",
+    "approval_inbox",
+    "project",
+    "ai_internal",
+    "artifact",
+    "test_runner",
+    "worker_report",
+]
+DiscordThreadRole = Literal[
+    "owner-design",
+    "owner-tasks",
+    "decisions",
+    "ai-internal",
+    "ai-internal-task",
+    "artifacts",
+    "test-runner",
+]
 
 
 class ProjectCreate(BaseModel):
@@ -206,3 +224,20 @@ class ApprovalDecision(BaseModel):
     approved_by: str = ""
     approval_message: str = ""
     decision_memory_key: str | None = None
+
+
+class DiscordMappingUpsert(BaseModel):
+    mapping_id: str | None = None
+    discord_guild_id: str = Field(min_length=1)
+    discord_channel_id: str = Field(min_length=1)
+    discord_thread_id: str = ""
+    project_id: int | None = None
+    conversation_kind: DiscordConversationKind
+    thread_role: DiscordThreadRole
+    created_by: str = ""
+    summary_memory_key: str | None = None
+    notes: str = ""
+
+
+class DiscordMappingArchive(BaseModel):
+    reason: str = ""

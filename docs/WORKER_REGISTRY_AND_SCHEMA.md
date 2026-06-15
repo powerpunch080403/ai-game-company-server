@@ -346,10 +346,10 @@ Implemented:
 - Artifact metadata API.
 - Artifact raw content upload/download API.
 - Approval decision table/API.
+- Discord mapping table/API.
 
 Next:
 
-- Discord mapping table/API.
 - Artifact cleanup job.
 - GitHub repo setup command using `gh`.
 - Memory tag/search helper.

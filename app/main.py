@@ -17,6 +17,8 @@ from app.schemas import (
     ApprovalCreate,
     ApprovalDecision,
     ArtifactCreate,
+    DiscordMappingArchive,
+    DiscordMappingUpsert,
     EpicCreate,
     MachineHeartbeat,
     MachineUpsert,
@@ -607,6 +609,70 @@ def decide_approval(approval_id: str, payload: ApprovalDecision, repo: Repositor
         raise not_found(exc) from exc
     except ValueError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+@app.post("/discord/mappings")
+def create_discord_mapping(payload: DiscordMappingUpsert, repo: Repository = Depends(get_repo)) -> dict:
+    try:
+        return repo.upsert_discord_mapping(payload)
+    except KeyError as exc:
+        raise not_found(exc) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+@app.put("/discord/mappings/{mapping_id}")
+def upsert_discord_mapping(
+    mapping_id: str,
+    payload: DiscordMappingUpsert,
+    repo: Repository = Depends(get_repo),
+) -> dict:
+    if payload.mapping_id is not None and payload.mapping_id != mapping_id:
+        raise HTTPException(status_code=400, detail="mapping_id must match path mapping_id")
+    try:
+        return repo.upsert_discord_mapping(payload, mapping_id=mapping_id)
+    except KeyError as exc:
+        raise not_found(exc) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+@app.get("/discord/mappings")
+def list_discord_mappings(
+    project_id: int | None = Query(default=None),
+    conversation_kind: str | None = Query(default=None),
+    thread_role: str | None = Query(default=None),
+    discord_guild_id: str | None = Query(default=None),
+    active: bool | None = Query(default=True),
+    repo: Repository = Depends(get_repo),
+) -> list[dict]:
+    return repo.list_discord_mappings(
+        project_id=project_id,
+        conversation_kind=conversation_kind,
+        thread_role=thread_role,
+        discord_guild_id=discord_guild_id,
+        active=active,
+    )
+
+
+@app.get("/discord/mappings/{mapping_id}")
+def get_discord_mapping(mapping_id: str, repo: Repository = Depends(get_repo)) -> dict:
+    try:
+        return repo.get_discord_mapping(mapping_id)
+    except KeyError as exc:
+        raise not_found(exc) from exc
+
+
+@app.post("/discord/mappings/{mapping_id}/archive")
+def archive_discord_mapping(
+    mapping_id: str,
+    payload: DiscordMappingArchive,
+    repo: Repository = Depends(get_repo),
+) -> dict:
+    try:
+        return repo.archive_discord_mapping(mapping_id, payload)
+    except KeyError as exc:
+        raise not_found(exc) from exc
 
 
 @app.get("/owner/task-history")

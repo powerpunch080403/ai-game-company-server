@@ -223,6 +223,33 @@ CREATE TABLE IF NOT EXISTS approval_requests (
 CREATE INDEX IF NOT EXISTS idx_approval_requests_status ON approval_requests(status);
 CREATE INDEX IF NOT EXISTS idx_approval_requests_project ON approval_requests(project_id);
 CREATE INDEX IF NOT EXISTS idx_approval_requests_target ON approval_requests(target_type, target_id);
+
+CREATE TABLE IF NOT EXISTS discord_mappings (
+    mapping_id TEXT PRIMARY KEY,
+    discord_guild_id TEXT NOT NULL,
+    discord_channel_id TEXT NOT NULL,
+    discord_thread_id TEXT NOT NULL DEFAULT '',
+    project_id INTEGER REFERENCES projects(id) ON DELETE SET NULL,
+    conversation_kind TEXT NOT NULL,
+    thread_role TEXT NOT NULL,
+    created_by TEXT NOT NULL DEFAULT '',
+    summary_memory_key TEXT,
+    notes TEXT NOT NULL DEFAULT '',
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    archived_at TEXT
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_discord_mappings_location
+ON discord_mappings(
+    discord_guild_id,
+    discord_channel_id,
+    discord_thread_id,
+    conversation_kind,
+    thread_role
+);
+CREATE INDEX IF NOT EXISTS idx_discord_mappings_project ON discord_mappings(project_id);
+CREATE INDEX IF NOT EXISTS idx_discord_mappings_kind_role ON discord_mappings(conversation_kind, thread_role);
 """
 
 PROJECT_COLUMNS = {

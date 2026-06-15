@@ -406,6 +406,35 @@ curl -X POST http://localhost:8080/approvals/repo-setup-1/decision \
   }'
 ```
 
+## Discord Mapping API
+
+Discord Bot은 채널/스레드가 어떤 프로젝트와 대화 역할에 연결되는지 서버에
+저장합니다. 서버 DB가 source of truth이고, Discord는 사람이 보기 쉬운
+운영 화면 역할을 합니다.
+
+```bash
+curl -X POST http://localhost:8080/discord/mappings \
+  -H "Authorization: Bearer your-token" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "discord_guild_id":"guild-1",
+    "discord_channel_id":"channel-1",
+    "discord_thread_id":"thread-owner-design",
+    "project_id":1,
+    "conversation_kind":"project",
+    "thread_role":"owner-design",
+    "created_by":"owner",
+    "summary_memory_key":"thread_thread-owner-design_summary_current",
+    "notes":"Owner design thread for this project."
+  }'
+
+curl "http://localhost:8080/discord/mappings?project_id=1&active=true" \
+  -H "Authorization: Bearer your-token"
+```
+
+스레드가 너무 길어져 새 스레드로 넘어갈 때는 기존 mapping을 archive하고,
+요약 memory key를 남긴 뒤 새 mapping을 만들면 됩니다.
+
 ## 기본 흐름
 
 1. Owner가 Project/Epic/Sub Epic/Task 생성
@@ -426,5 +455,4 @@ curl -X POST http://localhost:8080/approvals/repo-setup-1/decision \
 - SSH로 게임 개발 머신에서 브랜치 생성/테스트 실행 자동화
 - 실제 LLM Worker 어댑터
 - 실패 2회 반복 시 검색 트리거
-- Discord channel/thread mapping API
 - systemd 서비스 파일

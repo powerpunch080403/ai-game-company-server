@@ -252,6 +252,15 @@ Implemented after the baseline design:
   - `GET /approvals/{approval_id}`
   - `POST /approvals/{approval_id}/decision`
   - Decisions are one-way from `pending`; repeated decisions return conflict.
+- Discord Mapping API:
+  - `POST /discord/mappings`
+  - `PUT /discord/mappings/{mapping_id}`
+  - `GET /discord/mappings`
+  - `GET /discord/mappings/{mapping_id}`
+  - `POST /discord/mappings/{mapping_id}/archive`
+  - This records which Discord guild/channel/thread belongs to which project,
+    conversation kind, and thread role. Archived mappings keep their summary
+    memory key so long conversations can rotate safely.
 
 These contracts deliberately do not choose the first real game engine and do not
 make merge warnings blocking. Ask the user before making either decision.

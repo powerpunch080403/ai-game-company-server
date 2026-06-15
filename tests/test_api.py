@@ -769,6 +769,84 @@ def test_approval_request_and_decision_flow(client: TestClient) -> None:
     assert invalid_decision.status_code == 422
 
 
+def test_discord_mapping_lifecycle(client: TestClient) -> None:
+    project = client.post(
+        "/projects",
+        json={
+            "name": "Discord Project",
+            "description": "",
+            "engine": "undecided",
+            "repo_url": "https://example.test/discord.git",
+            "workspace_path": "/tmp/discord-workspace",
+            "base_branch": "main",
+        },
+    ).json()
+
+    payload = {
+        "discord_guild_id": "guild-1",
+        "discord_channel_id": "channel-1",
+        "discord_thread_id": "thread-owner-design",
+        "project_id": project["id"],
+        "conversation_kind": "project",
+        "thread_role": "owner-design",
+        "created_by": "owner",
+        "summary_memory_key": "thread_thread-owner-design_summary_current",
+        "notes": "Owner design thread for this project.",
+    }
+    created = client.post("/discord/mappings", json=payload)
+    assert created.status_code == 200
+    body = created.json()
+    assert body["mapping_id"].startswith("discord_")
+    assert body["project_id"] == project["id"]
+    assert body["archived_at"] is None
+
+    repeated = client.post("/discord/mappings", json={**payload, "notes": "Updated by bot sync."})
+    assert repeated.status_code == 200
+    assert repeated.json()["mapping_id"] == body["mapping_id"]
+    assert repeated.json()["notes"] == "Updated by bot sync."
+
+    listed = client.get(
+        "/discord/mappings",
+        params={
+            "project_id": project["id"],
+            "conversation_kind": "project",
+            "thread_role": "owner-design",
+            "discord_guild_id": "guild-1",
+        },
+    )
+    assert listed.status_code == 200
+    assert [item["mapping_id"] for item in listed.json()] == [body["mapping_id"]]
+
+    fetched = client.get(f"/discord/mappings/{body['mapping_id']}")
+    assert fetched.status_code == 200
+    assert fetched.json()["discord_thread_id"] == "thread-owner-design"
+
+    archived = client.post(
+        f"/discord/mappings/{body['mapping_id']}/archive",
+        json={"reason": "Thread rotated after context summary."},
+    )
+    assert archived.status_code == 200
+    assert archived.json()["archived_at"] is not None
+    assert "Archive reason" in archived.json()["notes"]
+
+    active = client.get("/discord/mappings", params={"active": True})
+    assert active.status_code == 200
+    assert active.json() == []
+
+    inactive = client.get("/discord/mappings", params={"active": False})
+    assert inactive.status_code == 200
+    assert [item["mapping_id"] for item in inactive.json()] == [body["mapping_id"]]
+
+    mismatch = client.put("/discord/mappings/custom-id", json={**payload, "mapping_id": "other-id"})
+    assert mismatch.status_code == 400
+
+    duplicate_location = client.put("/discord/mappings/custom-id", json={**payload, "mapping_id": "custom-id"})
+    assert duplicate_location.status_code == 409
+
+    invalid_project = client.post("/discord/mappings", json={**payload, "project_id": 999})
+    assert invalid_project.status_code == 404
+
+
 def test_owner_run_dry_run_records_prompt(client: TestClient) -> None:
     response = client.post(
         "/owner/runs",
