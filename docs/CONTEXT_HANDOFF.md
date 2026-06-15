@@ -332,6 +332,10 @@ Implemented after the baseline design:
     `compact_summary` is provided.
   - `app.discord_bot` dry-run supports `--check-context` and includes the
     server context-status response in its action JSON.
+  - `app.discord_bot` dry-run builds `owner_run_payload` for Owner-routed
+    messages and can submit it to `/owner/runs` with `--submit-owner-run`.
+    Submission defaults to `dry_run=true`; `--execute-owner-run` is required to
+    request `dry_run=false`.
   - This is the server-side contract only; real Discord message fetching,
     direct Codex CLI context inspection, and automatic LLM summarization are
     still later work.

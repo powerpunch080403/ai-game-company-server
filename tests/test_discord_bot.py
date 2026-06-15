@@ -4,6 +4,9 @@ from app.discord_bot import (
     DiscordBotAction,
     DiscordMessageContext,
     attach_context_status,
+    attach_owner_run_payload,
+    attach_owner_run_result,
+    build_owner_run_payload,
     context_status_payload,
     parse_args,
     route_discord_message,
@@ -167,6 +170,8 @@ def test_parse_args_supports_context_status_options(monkeypatch) -> None:
             "--archive-mapping",
             "--continuation-thread-id",
             "thread-2",
+            "--submit-owner-run",
+            "--execute-owner-run",
         ],
     )
 
@@ -179,6 +184,8 @@ def test_parse_args_supports_context_status_options(monkeypatch) -> None:
     assert args.auto_compact_summary == "summary"
     assert args.archive_mapping is True
     assert args.continuation_thread_id == "thread-2"
+    assert args.submit_owner_run is True
+    assert args.execute_owner_run is True
 
 
 def test_context_status_payload_uses_message_and_thresholds() -> None:
@@ -211,3 +218,54 @@ def test_attach_context_status_returns_action_with_status() -> None:
     assert updated.action_type == action.action_type
     assert updated.mapping_id == "mapping-1"
     assert updated.context_status == {"status": "compact_now"}
+
+
+def test_build_owner_run_payload_for_project_owner_message() -> None:
+    context = DiscordMessageContext(
+        guild_id="guild-1",
+        channel_id="channel-1",
+        thread_id="thread-1",
+        author_id="user-1",
+        content="작업을 다음 단계로 쪼개줘",
+    )
+    mapping = {
+        "mapping_id": "mapping-1",
+        "project_id": 7,
+        "conversation_kind": "project",
+        "thread_role": "owner-tasks",
+        "summary_memory_key": "project:7:thread:thread-1:summary:current",
+    }
+    action = route_discord_message(context, mapping)
+    action = attach_context_status(action, {"status": "ok", "estimated_tokens": 1200})
+
+    payload = build_owner_run_payload(context, mapping, action)
+
+    assert payload["objective"] == "작업을 다음 단계로 쪼개줘"
+    assert payload["dry_run"] is True
+    assert "Source: Discord operator console." in payload["context"]
+    assert "Project id: 7" in payload["context"]
+    assert "Summary memory key: project:7:thread:thread-1:summary:current" in payload["context"]
+    assert '"status": "ok"' in payload["context"]
+
+
+def test_attach_owner_run_payload_only_for_owner_actions() -> None:
+    context = DiscordMessageContext(guild_id="guild-1", channel_id="channel-1", content="hello")
+    mapping = {"mapping_id": "mapping-1", "conversation_kind": "owner_room", "thread_role": "owner-tasks"}
+    owner_action = route_discord_message(context, mapping)
+
+    with_payload = attach_owner_run_payload(owner_action, context, mapping, dry_run=False)
+
+    assert with_payload.owner_run_payload is not None
+    assert with_payload.owner_run_payload["dry_run"] is False
+
+    record_action = DiscordBotAction(action_type="record_only", summary="record")
+    without_payload = attach_owner_run_payload(record_action, context, mapping)
+    assert without_payload.owner_run_payload is None
+
+
+def test_attach_owner_run_result_returns_action_with_result() -> None:
+    action = DiscordBotAction(action_type="project_owner_message", summary="owner", needs_owner=True)
+
+    updated = attach_owner_run_result(action, {"id": 12, "status": "dry_run"})
+
+    assert updated.owner_run_result == {"id": 12, "status": "dry_run"}

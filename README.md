@@ -568,6 +568,21 @@ compact when the configured threshold is exceeded:
   --continuation-thread-id thread-owner-design-part-2
 ```
 
+Owner-routed messages include an `owner_run_payload` in the action JSON. To also
+store the run through `/owner/runs`, use:
+
+```bash
+./scripts/run_discord_bot.sh \
+  --guild-id guild-1 \
+  --channel-id channel-1 \
+  --thread-id thread-owner-tasks \
+  --content "Break this into worker tasks." \
+  --submit-owner-run
+```
+
+This submits `dry_run=true` by default. To execute the configured Owner command,
+pass `--execute-owner-run` after `GAME_COMPANY_OWNER_COMMAND` is configured.
+
 ## Test Runner Report Mapping
 
 Test Runner는 프로젝트 workspace의 `.game-company/test_runner.json`을 읽고

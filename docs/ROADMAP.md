@@ -32,6 +32,8 @@ The server can already run the core loop:
 22. Add Discord thread context compaction API for Codex-style rolling
     summaries, continuation thread mappings, and 260k-token estimate checks.
 23. Connect Discord bot dry-run routing to the context-status endpoint.
+24. Add Discord bot dry-run Owner run payload and optional safe submission to
+    `/owner/runs`.
 
 ## Next Work While Main Computer Is Unavailable
 
@@ -126,6 +128,9 @@ Most of this is already implemented.
      threshold.
    - Discord bot dry-run can call context-status and include the result in its
      action JSON.
+   - Discord bot dry-run now builds `owner_run_payload` for Owner-routed
+     messages and can submit it to `/owner/runs` as `dry_run=true` unless
+     explicitly told to execute.
    - Next: add a real Discord Gateway adapter after bot token/server setup.
    - Next: connect Owner-room/project-owner messages to Owner run or approval
      workflows.

@@ -3,7 +3,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
 from typing import Any
 
 import httpx
@@ -30,6 +30,8 @@ class DiscordBotAction:
     thread_role: str | None = None
     mapping_id: str | None = None
     context_status: dict[str, Any] | None = None
+    owner_run_payload: dict[str, Any] | None = None
+    owner_run_result: dict[str, Any] | None = None
     needs_owner: bool = False
     needs_approval: bool = False
 
@@ -76,6 +78,12 @@ class GameCompanyApiClient:
             response.raise_for_status()
             return response.json()
 
+    def create_owner_run(self, payload: dict[str, Any]) -> dict[str, Any]:
+        with httpx.Client(timeout=30) as client:
+            response = client.post(f"{self.server}/owner/runs", json=payload, headers=self.headers())
+            response.raise_for_status()
+            return response.json()
+
 
 def context_status_payload(
     context: DiscordMessageContext,
@@ -105,16 +113,69 @@ def context_status_payload(
 def attach_context_status(action: DiscordBotAction, context_status: dict[str, Any] | None) -> DiscordBotAction:
     if context_status is None:
         return action
-    return DiscordBotAction(
-        action_type=action.action_type,
-        summary=action.summary,
-        project_id=action.project_id,
-        conversation_kind=action.conversation_kind,
-        thread_role=action.thread_role,
-        mapping_id=action.mapping_id,
-        context_status=context_status,
-        needs_owner=action.needs_owner,
-        needs_approval=action.needs_approval,
+    return replace(action, context_status=context_status)
+
+
+def build_owner_run_payload(
+    context: DiscordMessageContext,
+    mapping: dict[str, Any],
+    action: DiscordBotAction,
+    dry_run: bool = True,
+) -> dict[str, Any]:
+    objective = context.content.strip() or "Handle Discord Owner conversation."
+    context_lines = [
+        "Source: Discord operator console.",
+        f"Action type: {action.action_type}",
+        f"Guild: {context.guild_id}",
+        f"Channel: {context.channel_id}",
+        f"Thread: {context.thread_id or 'channel'}",
+        f"Author: {context.author_id or 'unknown'}",
+        f"Mapping: {action.mapping_id or mapping.get('mapping_id') or 'unknown'}",
+        f"Conversation: {action.conversation_kind or mapping.get('conversation_kind') or 'unknown'}",
+        f"Thread role: {action.thread_role or mapping.get('thread_role') or 'unknown'}",
+    ]
+    project_id = action.project_id if action.project_id is not None else mapping.get("project_id")
+    if project_id is not None:
+        context_lines.append(f"Project id: {project_id}")
+    summary_memory_key = mapping.get("summary_memory_key")
+    if summary_memory_key:
+        context_lines.append(f"Summary memory key: {summary_memory_key}")
+    if action.context_status:
+        context_lines.append(f"Context status: {json.dumps(action.context_status, ensure_ascii=False)}")
+    context_lines.extend(
+        [
+            "",
+            "User message:",
+            objective,
+        ]
+    )
+    return {
+        "objective": objective,
+        "context": "\n".join(context_lines),
+        "dry_run": dry_run,
+    }
+
+
+def attach_owner_run_payload(
+    action: DiscordBotAction,
+    context: DiscordMessageContext,
+    mapping: dict[str, Any] | None,
+    dry_run: bool = True,
+) -> DiscordBotAction:
+    if not action.needs_owner or not mapping:
+        return action
+    return replace(
+        action,
+        owner_run_payload=build_owner_run_payload(context, mapping, action, dry_run=dry_run),
+    )
+
+
+def attach_owner_run_result(action: DiscordBotAction, owner_run_result: dict[str, Any] | None) -> DiscordBotAction:
+    if owner_run_result is None:
+        return action
+    return replace(
+        action,
+        owner_run_result=owner_run_result,
     )
 
 
@@ -264,6 +325,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--auto-compact-summary", default="")
     parser.add_argument("--archive-mapping", action="store_true")
     parser.add_argument("--continuation-thread-id", default=None)
+    parser.add_argument("--submit-owner-run", action="store_true", help="Submit Owner-routed messages to /owner/runs.")
+    parser.add_argument(
+        "--execute-owner-run",
+        action="store_true",
+        help="Set dry_run=false when submitting Owner run. Use only after configuring the Owner command.",
+    )
     return parser.parse_args()
 
 
@@ -303,6 +370,10 @@ def main() -> int:
             continuation_discord_thread_id=args.continuation_thread_id,
         )
         action = attach_context_status(action, api.context_status(mapping["mapping_id"], status_payload))
+    action = attach_owner_run_payload(action, context, mapping, dry_run=not args.execute_owner_run)
+    if args.submit_owner_run and action.owner_run_payload:
+        api = GameCompanyApiClient.from_env()
+        action = attach_owner_run_result(action, api.create_owner_run(action.owner_run_payload))
     print(json.dumps(asdict(action), ensure_ascii=False, indent=2))
     return 0
 
