@@ -14,6 +14,7 @@ from app.schemas import (
     ArtifactCreate,
     DiscordMappingArchive,
     DiscordMappingUpsert,
+    DiscordThreadCompactRequest,
     EpicCreate,
     MachineHeartbeat,
     MachineUpsert,
@@ -46,6 +47,20 @@ def stable_discord_mapping_id(payload: DiscordMappingUpsert) -> str:
         ]
     )
     return f"discord_{sha256(raw.encode('utf-8')).hexdigest()[:16]}"
+
+
+def compact_timestamp_slug(value: str) -> str:
+    return value.replace(":", "").replace("+", "Z")
+
+
+def unique_items(values: list[str]) -> list[str]:
+    seen: set[str] = set()
+    items: list[str] = []
+    for value in values:
+        if value and value not in seen:
+            seen.add(value)
+            items.append(value)
+    return items
 
 
 def row_to_dict(row: sqlite3.Row | None) -> dict[str, Any] | None:
@@ -683,6 +698,128 @@ class Repository:
         )
         self.conn.commit()
         return self.get_discord_mapping(mapping_id)
+
+    def compact_discord_thread(self, mapping_id: str, payload: DiscordThreadCompactRequest) -> dict[str, Any]:
+        mapping = self.get_discord_mapping(mapping_id)
+        timestamp = now_iso()
+        thread_id = mapping["discord_thread_id"] or "channel"
+        project_tag = f"project:{mapping['project_id']}" if mapping.get("project_id") is not None else "global"
+        thread_tag = f"thread:{thread_id}"
+        summary_key = (
+            mapping.get("summary_memory_key")
+            or f"{project_tag}:thread:{thread_id}:summary:current"
+        )
+        title = payload.title or f"{mapping['thread_role']} summary for {thread_id}"
+        tags = unique_items(
+            [
+                "thread_summary",
+                project_tag,
+                thread_tag,
+                f"conversation:{mapping['conversation_kind']}",
+                f"role:{mapping['thread_role']}",
+                *payload.tags,
+            ]
+        )
+
+        archived_memory: dict[str, Any] | None = None
+        existing = self.conn.execute("SELECT * FROM memories WHERE key = ?", (summary_key,)).fetchone()
+        if existing is not None:
+            existing_memory = row_to_dict(existing) or {}
+            archive_key = f"{summary_key}:archive:{compact_timestamp_slug(timestamp)}:{uuid.uuid4().hex[:8]}"
+            archive_tags = unique_items([*existing_memory.get("tags", []), "summary_archive"])
+            self.conn.execute(
+                """
+                INSERT INTO memories (type, key, title, body, tags_json, created_at, updated_at)
+                VALUES ('thread_summary', ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    archive_key,
+                    f"Archived {existing_memory['title']}",
+                    existing_memory["body"],
+                    json.dumps(archive_tags),
+                    timestamp,
+                    timestamp,
+                ),
+            )
+            archived_memory = self.get_memory(archive_key)
+
+        self.conn.execute(
+            """
+            INSERT INTO memories (type, key, title, body, tags_json, created_at, updated_at)
+            VALUES ('thread_summary', ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(key) DO UPDATE SET
+                type = excluded.type,
+                title = excluded.title,
+                body = excluded.body,
+                tags_json = excluded.tags_json,
+                updated_at = excluded.updated_at
+            """,
+            (
+                summary_key,
+                title,
+                payload.summary,
+                json.dumps(tags),
+                timestamp,
+                timestamp,
+            ),
+        )
+        self.conn.execute(
+            """
+            UPDATE discord_mappings
+            SET summary_memory_key = ?,
+                updated_at = ?
+            WHERE mapping_id = ?
+            """,
+            (summary_key, timestamp, mapping_id),
+        )
+
+        archived_mapping: dict[str, Any] | None = None
+        if payload.archive_mapping:
+            archive_reason = payload.archive_reason or "Thread compacted after context summary."
+            note_suffix = f"\nArchive reason: {archive_reason}"
+            self.conn.execute(
+                """
+                UPDATE discord_mappings
+                SET archived_at = COALESCE(archived_at, ?),
+                    notes = notes || ?,
+                    updated_at = ?
+                WHERE mapping_id = ?
+                """,
+                (timestamp, note_suffix, timestamp, mapping_id),
+            )
+
+        continuation_mapping: dict[str, Any] | None = None
+        if payload.continuation_discord_thread_id:
+            continuation_thread_id = payload.continuation_discord_thread_id
+            continuation_summary_key = f"{project_tag}:thread:{continuation_thread_id}:summary:current"
+            continuation_payload = DiscordMappingUpsert(
+                discord_guild_id=mapping["discord_guild_id"],
+                discord_channel_id=mapping["discord_channel_id"],
+                discord_thread_id=continuation_thread_id,
+                project_id=mapping.get("project_id"),
+                conversation_kind=mapping["conversation_kind"],
+                thread_role=mapping["thread_role"],
+                created_by=payload.created_by,
+                summary_memory_key=continuation_summary_key,
+                notes=(
+                    payload.continuation_notes
+                    or f"Continuation of {mapping_id}. Previous summary memory: {summary_key}."
+                ),
+            )
+            continuation_mapping = self.upsert_discord_mapping(continuation_payload)
+
+        self.conn.commit()
+        current_memory = self.get_memory(summary_key)
+        current_mapping = self.get_discord_mapping(mapping_id)
+        if payload.archive_mapping:
+            archived_mapping = current_mapping
+        return {
+            "mapping": current_mapping,
+            "memory": current_memory,
+            "archived_memory": archived_memory,
+            "archived_mapping": archived_mapping,
+            "continuation_mapping": continuation_mapping,
+        }
 
     def get_project_tree(self, project_id: int) -> dict[str, Any]:
         project = self.get_project(project_id)

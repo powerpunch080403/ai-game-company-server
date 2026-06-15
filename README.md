@@ -488,6 +488,21 @@ curl "http://localhost:8080/discord/mappings?project_id=1&active=true" \
 스레드가 너무 길어져 새 스레드로 넘어갈 때는 기존 mapping을 archive하고,
 요약 memory key를 남긴 뒤 새 mapping을 만들면 됩니다.
 
+Codex-style context compaction is available through:
+
+```bash
+curl -X POST http://localhost:8080/discord/mappings/discord_mapping_id/compact \
+  -H "Authorization: Bearer your-token" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "summary":"Current compact summary for the thread.",
+    "archive_mapping":true,
+    "continuation_discord_thread_id":"thread-owner-tasks-part-2"
+  }'
+```
+
+See [docs/CONTEXT_COMPACTION.md](docs/CONTEXT_COMPACTION.md).
+
 ## Discord Bot Skeleton
 
 현재 Discord bot은 실제 Discord Gateway에 접속하기 전 단계의 skeleton입니다.

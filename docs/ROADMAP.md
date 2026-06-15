@@ -29,6 +29,8 @@ The server can already run the core loop:
     report mapping, and server submission.
 21. Add engine-agnostic project scaffold tooling with `.game-company` and
     `.ai-company` automation folders.
+22. Add Discord thread context compaction API for Codex-style rolling
+    summaries and continuation thread mappings.
 
 ## Next Work While Main Computer Is Unavailable
 
@@ -117,6 +119,8 @@ Most of this is already implemented.
 
 7. Discord Bot Runtime
    - Mapping API and dry-run routing skeleton are implemented.
+   - Context compaction API is implemented for storing thread summaries,
+     archiving old summaries, and creating continuation mappings.
    - Next: add a real Discord Gateway adapter after bot token/server setup.
    - Next: connect Owner-room/project-owner messages to Owner run or approval
      workflows.
@@ -158,8 +162,7 @@ These do not require the main computer:
   mode is approved.
 - Add Discord bot/operator console schema after the conversation model is
   finalized.
-- Add long-term project change summary log design before implementing Discord
-  memory ingestion.
+- Connect Discord memory ingestion to `docs/CONTEXT_COMPACTION.md`.
 - Add visual artifact and MCP tool operation schemas before connecting Blender
   or game engine tools.
 - Connect Discord bot actions to Owner/approval/artifact server workflows.

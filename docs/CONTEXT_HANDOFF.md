@@ -319,6 +319,14 @@ Implemented after the baseline design:
   - `scripts/create_project_template.*` exposes the scaffold from CLI.
   - The scaffold remains engine-agnostic and refuses to overwrite existing
     files unless `--force` is passed.
+- Context compaction:
+  - `docs/CONTEXT_COMPACTION.md` describes the Codex-style rolling summary
+    design for Owner/Discord conversations.
+  - `POST /discord/mappings/{mapping_id}/compact` stores current
+    `thread_summary` memory, archives the previous current summary, can archive
+    the old mapping, and can create a continuation thread mapping.
+  - This is the server-side contract only; real Discord message fetching and
+    automatic LLM summarization are still later work.
 
 These contracts deliberately do not choose the first real game engine and do not
 make merge warnings blocking. Ask the user before making either decision.

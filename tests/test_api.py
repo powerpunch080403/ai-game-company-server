@@ -955,6 +955,80 @@ def test_discord_mapping_lifecycle(client: TestClient) -> None:
     assert invalid_project.status_code == 404
 
 
+def test_discord_thread_compaction_stores_summary_and_continuation(client: TestClient) -> None:
+    project = client.post(
+        "/projects",
+        json={
+            "name": "Context Project",
+            "description": "",
+            "engine": "undecided",
+            "repo_url": "https://example.test/context.git",
+            "workspace_path": "/tmp/context-workspace",
+            "base_branch": "main",
+        },
+    ).json()
+
+    mapping = client.post(
+        "/discord/mappings",
+        json={
+            "discord_guild_id": "guild-1",
+            "discord_channel_id": "channel-1",
+            "discord_thread_id": "thread-owner-tasks",
+            "project_id": project["id"],
+            "conversation_kind": "project",
+            "thread_role": "owner-tasks",
+            "created_by": "owner",
+            "notes": "Owner task planning thread.",
+        },
+    ).json()
+
+    first = client.post(
+        f"/discord/mappings/{mapping['mapping_id']}/compact",
+        json={
+            "summary": "Owner wants compact context instead of full raw Discord history.",
+            "tags": ["context", "owner"],
+        },
+    )
+    assert first.status_code == 200
+    first_body = first.json()
+    assert first_body["memory"]["type"] == "thread_summary"
+    assert first_body["memory"]["body"].startswith("Owner wants compact context")
+    assert f"project:{project['id']}" in first_body["memory"]["tags"]
+    assert "thread:thread-owner-tasks" in first_body["memory"]["tags"]
+    assert first_body["mapping"]["summary_memory_key"] == first_body["memory"]["key"]
+    assert first_body["archived_memory"] is None
+    assert first_body["continuation_mapping"] is None
+
+    second = client.post(
+        f"/discord/mappings/{mapping['mapping_id']}/compact",
+        json={
+            "summary": "Current summary now includes a continuation thread.",
+            "archive_mapping": True,
+            "continuation_discord_thread_id": "thread-owner-tasks-part-2",
+            "continuation_notes": "Part 2 after compaction.",
+        },
+    )
+    assert second.status_code == 200
+    second_body = second.json()
+    assert second_body["memory"]["body"] == "Current summary now includes a continuation thread."
+    assert second_body["archived_memory"]["body"].startswith("Owner wants compact context")
+    assert "summary_archive" in second_body["archived_memory"]["tags"]
+    assert second_body["archived_mapping"]["archived_at"] is not None
+    assert second_body["continuation_mapping"]["discord_thread_id"] == "thread-owner-tasks-part-2"
+    assert second_body["continuation_mapping"]["archived_at"] is None
+
+    summaries = client.get(
+        "/memory",
+        params={
+            "type": "thread_summary",
+            "tag": "thread:thread-owner-tasks",
+            "q": "continuation",
+        },
+    )
+    assert summaries.status_code == 200
+    assert summaries.json()[0]["key"] == second_body["memory"]["key"]
+
+
 def test_owner_run_dry_run_records_prompt(client: TestClient) -> None:
     response = client.post(
         "/owner/runs",

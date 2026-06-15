@@ -245,6 +245,7 @@ project to Unity, Unreal, Godot, web framework, mobile framework, or similar.
 ## Memory and Logs
 
 Detailed design: [LONG_TERM_PROJECT_MEMORY.md](LONG_TERM_PROJECT_MEMORY.md).
+Context compaction contract: [CONTEXT_COMPACTION.md](CONTEXT_COMPACTION.md).
 
 The server DB and project repositories are the source of truth, not raw Discord
 history.

@@ -10,6 +10,14 @@ MemoryType = Literal[
     "project_rules",
     "coding_rules",
     "project_knowledge",
+    "status",
+    "architecture",
+    "decision",
+    "thread_summary",
+    "change_log",
+    "open_questions",
+    "owner_conversation",
+    "ai_internal_summary",
     "art_guide",
     "narrative_guide",
     "task_history",
@@ -241,3 +249,14 @@ class DiscordMappingUpsert(BaseModel):
 
 class DiscordMappingArchive(BaseModel):
     reason: str = ""
+
+
+class DiscordThreadCompactRequest(BaseModel):
+    summary: str = Field(min_length=1)
+    title: str = ""
+    tags: list[str] = Field(default_factory=list)
+    archive_mapping: bool = False
+    archive_reason: str = "Thread compacted after context summary."
+    continuation_discord_thread_id: str | None = None
+    continuation_notes: str = ""
+    created_by: str = "context_compaction"

@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 
 from app.api.deps import get_repo, not_found
 from app.repository import Repository
-from app.schemas import DiscordMappingArchive, DiscordMappingUpsert
+from app.schemas import DiscordMappingArchive, DiscordMappingUpsert, DiscordThreadCompactRequest
 
 
 router = APIRouter()
@@ -76,3 +76,17 @@ def archive_discord_mapping(
         return repo.archive_discord_mapping(mapping_id, payload)
     except KeyError as exc:
         raise not_found(exc) from exc
+
+
+@router.post("/discord/mappings/{mapping_id}/compact")
+def compact_discord_thread(
+    mapping_id: str,
+    payload: DiscordThreadCompactRequest,
+    repo: Repository = Depends(get_repo),
+) -> dict:
+    try:
+        return repo.compact_discord_thread(mapping_id, payload)
+    except KeyError as exc:
+        raise not_found(exc) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
