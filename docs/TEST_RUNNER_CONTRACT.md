@@ -188,6 +188,26 @@ The local artifact report should use this shape:
 The server already accepts `WorkerReportCreate`. The test runner maps its local
 report into that API.
 
+Implemented helper:
+
+```bash
+python -m app.test_runner_report \
+  --package runs/workspace-task-12/task_package.json \
+  --report .game-company/artifacts/task-12/run-20260614T120000Z/test-runner-report.json
+```
+
+Wrapper scripts:
+
+```text
+scripts/map_test_runner_report.sh
+scripts/map_test_runner_report.ps1
+```
+
+The helper converts local `status`, `phases`, `artifacts`, timestamps, and
+issues into the existing worker report JSON shape. It does not run engine tests
+by itself; it is the contract bridge that a future test runner machine will use
+after executing configured commands.
+
 Success:
 
 ```json
@@ -310,8 +330,7 @@ blocking.
 2. Add `.game-company/test_runner.json` to new game templates.
 3. Add a `scripts/run_test_runner.*` wrapper that reuses workspace worker
    mechanics.
-4. Add local unit tests for report mapping before adding engine-specific
-   runners.
+4. Report mapping helper and local unit tests are implemented.
 5. Add Unity-specific defaults only after the first real Unity project is
    selected.
 

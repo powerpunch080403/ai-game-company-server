@@ -294,6 +294,13 @@ Implemented after the baseline design:
     `--mapping-json` for offline dry-runs.
   - It does not connect to Discord Gateway yet; `DISCORD_BOT_TOKEN` is reserved
     for the later runtime adapter.
+- Test Runner report mapping:
+  - `app.test_runner_report.map_test_runner_report` converts local
+    `test-runner-report.json` files into `WorkerReportCreate` JSON.
+  - `scripts/map_test_runner_report.*` exposes the conversion from CLI.
+  - It maps phases to `tests`, successful artifacts to `files_changed`, status
+    and timestamps to worker timing fields, and issues to the server report
+    issue string.
 
 These contracts deliberately do not choose the first real game engine and do not
 make merge warnings blocking. Ask the user before making either decision.
