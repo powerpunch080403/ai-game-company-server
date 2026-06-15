@@ -42,6 +42,8 @@ def list_discord_mappings(
     conversation_kind: str | None = Query(default=None),
     thread_role: str | None = Query(default=None),
     discord_guild_id: str | None = Query(default=None),
+    discord_channel_id: str | None = Query(default=None),
+    discord_thread_id: str | None = Query(default=None),
     active: bool | None = Query(default=True),
     repo: Repository = Depends(get_repo),
 ) -> list[dict]:
@@ -50,6 +52,8 @@ def list_discord_mappings(
         conversation_kind=conversation_kind,
         thread_role=thread_role,
         discord_guild_id=discord_guild_id,
+        discord_channel_id=discord_channel_id,
+        discord_thread_id=discord_thread_id,
         active=active,
     )
 

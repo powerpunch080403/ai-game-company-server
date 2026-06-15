@@ -632,6 +632,8 @@ class Repository:
         conversation_kind: str | None = None,
         thread_role: str | None = None,
         discord_guild_id: str | None = None,
+        discord_channel_id: str | None = None,
+        discord_thread_id: str | None = None,
         active: bool | None = None,
     ) -> list[dict[str, Any]]:
         clauses: list[str] = []
@@ -648,6 +650,12 @@ class Repository:
         if discord_guild_id:
             clauses.append("discord_guild_id = ?")
             params.append(discord_guild_id)
+        if discord_channel_id:
+            clauses.append("discord_channel_id = ?")
+            params.append(discord_channel_id)
+        if discord_thread_id is not None:
+            clauses.append("discord_thread_id = ?")
+            params.append(discord_thread_id)
         if active is True:
             clauses.append("archived_at IS NULL")
         elif active is False:

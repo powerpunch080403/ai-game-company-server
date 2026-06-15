@@ -22,6 +22,7 @@ The server can already run the core loop:
 14. Block dangerous worker shell command patterns and support command allowlists.
 15. Limit artifact upload size with a configurable server setting.
 16. Split FastAPI endpoints into route modules under `app/api/routes`.
+17. Add a dry-run Discord bot routing skeleton against stored mapping APIs.
 
 ## Next Work While Main Computer Is Unavailable
 
@@ -101,6 +102,12 @@ Most of this is already implemented.
    - Decide which warnings block merge.
    - Add configurable thresholds.
 
+7. Discord Bot Runtime
+   - Mapping API and dry-run routing skeleton are implemented.
+   - Next: add a real Discord Gateway adapter after bot token/server setup.
+   - Next: connect Owner-room/project-owner messages to Owner run or approval
+     workflows.
+
 ## v1.5 Later
 
 - Vector search for memory.
@@ -131,7 +138,7 @@ These do not require the main computer:
 - Rewrite the corrupted README in clean UTF-8 Korean.
 - Add template scaffold script and tests.
 - Add artifact streaming upload design/tests.
-- Add Discord bot skeleton against the stored mapping APIs.
+- Add real Discord Gateway adapter for the bot skeleton.
 - Add test runner report mapping helpers and tests.
 - Add API examples for the project planning flow.
 - Turn `docs/SERVER_CONFIGURATION.md` into systemd unit files when always-on
@@ -142,4 +149,4 @@ These do not require the main computer:
   memory ingestion.
 - Add visual artifact and MCP tool operation schemas before connecting Blender
   or game engine tools.
-- Implement the Discord bot against the stored Discord mapping APIs.
+- Connect Discord bot actions to Owner/approval/artifact server workflows.

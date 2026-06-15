@@ -287,6 +287,13 @@ Implemented after the baseline design:
   - `app/api/routes/*` owns feature endpoints.
   - `app/services/reviews.py` and `app/services/artifact_files.py` hold shared
     helper logic that used to live in `main.py`.
+- Discord bot skeleton:
+  - `app.discord_bot` contains a testable message routing core.
+  - `scripts/run_discord_bot.*` runs dry-run routing from CLI.
+  - It queries `/discord/mappings` with guild/channel/thread filters or accepts
+    `--mapping-json` for offline dry-runs.
+  - It does not connect to Discord Gateway yet; `DISCORD_BOT_TOKEN` is reserved
+    for the later runtime adapter.
 
 These contracts deliberately do not choose the first real game engine and do not
 make merge warnings blocking. Ask the user before making either decision.

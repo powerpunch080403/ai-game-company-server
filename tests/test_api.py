@@ -918,6 +918,8 @@ def test_discord_mapping_lifecycle(client: TestClient) -> None:
             "conversation_kind": "project",
             "thread_role": "owner-design",
             "discord_guild_id": "guild-1",
+            "discord_channel_id": "channel-1",
+            "discord_thread_id": "thread-owner-design",
         },
     )
     assert listed.status_code == 200
