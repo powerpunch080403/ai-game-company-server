@@ -312,6 +312,13 @@ Implemented after the baseline design:
     `app.test_runner_report`, and submits worker reports unless `--no-report`
     is used.
   - `scripts/run_test_runner_worker.*` exposes the loop from CLI.
+- Project template scaffold:
+  - `app.project_template` creates minimal project repositories with
+    `.game-company/`, `.ai-company/`, docs stubs, source/test placeholders, and
+    a default `.game-company/test_runner.json`.
+  - `scripts/create_project_template.*` exposes the scaffold from CLI.
+  - The scaffold remains engine-agnostic and refuses to overwrite existing
+    files unless `--force` is passed.
 
 These contracts deliberately do not choose the first real game engine and do not
 make merge warnings blocking. Ask the user before making either decision.

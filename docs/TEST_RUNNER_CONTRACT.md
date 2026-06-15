@@ -370,7 +370,8 @@ blocking.
 ## v1 Implementation Plan
 
 1. Keep this document as the contract.
-2. Add `.game-company/test_runner.json` to new game templates.
+2. Add `.game-company/test_runner.json` to new game templates: implemented in
+   `app.project_template` and `scripts/create_project_template.*`.
 3. `scripts/run_test_runner.*` wrapper and `app.test_runner` phase execution
    are implemented.
 4. Report mapping helper and local unit tests are implemented.

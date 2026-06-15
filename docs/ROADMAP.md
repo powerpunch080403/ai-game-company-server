@@ -27,6 +27,8 @@ The server can already run the core loop:
 19. Add Test Runner configured phase execution wrapper.
 20. Add full Test Runner worker loop for lease, workspace prep, phase run,
     report mapping, and server submission.
+21. Add engine-agnostic project scaffold tooling with `.game-company` and
+    `.ai-company` automation folders.
 
 ## Next Work While Main Computer Is Unavailable
 
@@ -85,14 +87,18 @@ Most of this is already implemented.
    - Local report mapping helper and tests are implemented.
    - Local runner wrapper executes configured phases and writes local reports.
    - Full test runner worker loop is implemented.
-   - Next: add `.game-company/test_runner.json` to generated project templates.
+   - `.game-company/test_runner.json` is included in generated project templates.
+   - Next: add real project-specific build/test presets after engine/framework
+     selection.
 
 4. Game Project Template
    - Engine undecided.
    - Keep template minimal until actual game starts.
    - Support Unity later without locking the server to Unity.
    - Baseline contract documented in `docs/GAME_PROJECT_TEMPLATE.md`.
-   - Next: add a scaffold script after the contract is reviewed.
+   - Local scaffold script and tests are implemented.
+   - Next: connect approved Discord/Owner repo creation flow to the scaffold
+     tool.
 
 5. Documentation
    - Architecture blueprint documented in `docs/ARCHITECTURE_BLUEPRINT.md`.
@@ -143,7 +149,7 @@ Until then, keep defaults conservative and continue implementation.
 These do not require the main computer:
 
 - Rewrite the corrupted README in clean UTF-8 Korean.
-- Add template scaffold script and tests.
+- Connect template scaffold tooling to approved project bootstrap flows.
 - Add artifact streaming upload design/tests.
 - Add real Discord Gateway adapter for the bot skeleton.
 - Add `.game-company/test_runner.json` to project scaffold templates.

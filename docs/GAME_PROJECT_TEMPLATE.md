@@ -237,6 +237,42 @@ No final Unity layout is chosen in v1.
 5. Create an initial epic such as `Project Bootstrap`.
 6. Create only design or template-hardening tasks until engine selection.
 
+## Local Scaffold Command
+
+The v1 local scaffold tool creates the minimal repository shape described in
+this document:
+
+```bash
+./scripts/create_project_template.sh /path/to/new-project \
+  --name "Demo Game" \
+  --type game-basic
+```
+
+Windows PowerShell:
+
+```powershell
+.\scripts\create_project_template.ps1 C:\path\to\new-project `
+  --name "Demo Game" `
+  --type game-basic
+```
+
+Supported template types:
+
+```text
+game-basic
+web-basic
+app-basic
+backend-basic
+tool-basic
+automation-basic
+plugin-basic
+```
+
+The command refuses to overwrite existing files unless `--force` is passed.
+It creates both `.game-company/` and `.ai-company/` automation folders. The
+server and Test Runner use `.game-company/` in v1; `.ai-company/` is kept as
+the future neutral name for non-game development projects.
+
 ## Server Project Config
 
 Recommended initial project API payload:
@@ -296,8 +332,9 @@ Engine migration task should:
 ## v1 Implementation Plan
 
 1. Keep this document as the template contract.
-2. Add a local scaffold script later, for example
-   `scripts/create_game_project_template.*`.
-3. Include `.game-company/test_runner.json` in generated templates.
-4. Add tests for scaffold output before adding engine-specific template modes.
+2. Add a local scaffold script: done with `app.project_template` and
+   `scripts/create_project_template.*`.
+3. Include `.game-company/test_runner.json` in generated templates: done.
+4. Add tests for scaffold output before adding engine-specific template modes:
+   done in `tests/test_project_template.py`.
 5. Ask the user before choosing Unity/Godot/Unreal for the first real game.
