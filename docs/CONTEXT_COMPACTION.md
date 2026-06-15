@@ -25,6 +25,7 @@ Implemented:
 - Optional continuation Discord thread mapping.
 - Context token estimate with default `260000` compact threshold.
 - Optional auto-compaction when a compact summary is provided.
+- Discord bot dry-run support for calling `context-status`.
 
 Not implemented yet:
 
@@ -105,6 +106,18 @@ If a compact summary is already available, the same endpoint can store it:
   "archive_mapping": true,
   "continuation_discord_thread_id": "thread-owner-tasks-part-2"
 }
+```
+
+Discord bot dry-run:
+
+```bash
+./scripts/run_discord_bot.sh \
+  --guild-id guild-1 \
+  --channel-id channel-1 \
+  --thread-id thread-owner-design \
+  --content "/context" \
+  --check-context \
+  --estimated-extra-tokens 2000
 ```
 
 Store a compact summary directly:

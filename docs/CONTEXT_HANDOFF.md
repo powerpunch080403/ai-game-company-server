@@ -330,6 +330,8 @@ Implemented after the baseline design:
     the old mapping, and can create a continuation thread mapping.
   - `context-status` can call compaction when `auto_compact=true` and a
     `compact_summary` is provided.
+  - `app.discord_bot` dry-run supports `--check-context` and includes the
+    server context-status response in its action JSON.
   - This is the server-side contract only; real Discord message fetching,
     direct Codex CLI context inspection, and automatic LLM summarization are
     still later work.

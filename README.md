@@ -541,6 +541,33 @@ GAME_COMPANY_DISCORD_SERVER_TOKEN=owner-or-admin-token-for-server-api
 DISCORD_BOT_TOKEN=real-discord-bot-token-for-later-runtime-adapter
 ```
 
+Context status dry-run:
+
+```bash
+./scripts/run_discord_bot.sh \
+  --guild-id guild-1 \
+  --channel-id channel-1 \
+  --thread-id thread-owner-design \
+  --content "/context" \
+  --check-context \
+  --estimated-extra-tokens 2000
+```
+
+If a compact summary is already prepared, the bot dry-run can ask the server to
+compact when the configured threshold is exceeded:
+
+```bash
+./scripts/run_discord_bot.sh \
+  --guild-id guild-1 \
+  --channel-id channel-1 \
+  --thread-id thread-owner-design \
+  --content "long owner conversation..." \
+  --check-context \
+  --auto-compact-summary "Compact summary to carry forward." \
+  --archive-mapping \
+  --continuation-thread-id thread-owner-design-part-2
+```
+
 ## Test Runner Report Mapping
 
 Test Runner는 프로젝트 workspace의 `.game-company/test_runner.json`을 읽고

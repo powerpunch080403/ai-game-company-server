@@ -31,6 +31,7 @@ The server can already run the core loop:
     `.ai-company` automation folders.
 22. Add Discord thread context compaction API for Codex-style rolling
     summaries, continuation thread mappings, and 260k-token estimate checks.
+23. Connect Discord bot dry-run routing to the context-status endpoint.
 
 ## Next Work While Main Computer Is Unavailable
 
@@ -123,6 +124,8 @@ Most of this is already implemented.
      archiving old summaries, creating continuation mappings, and estimating
      whether a mapped conversation should compact before a 260k context
      threshold.
+   - Discord bot dry-run can call context-status and include the result in its
+     action JSON.
    - Next: add a real Discord Gateway adapter after bot token/server setup.
    - Next: connect Owner-room/project-owner messages to Owner run or approval
      workflows.

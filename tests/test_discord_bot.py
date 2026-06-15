@@ -1,6 +1,14 @@
 from __future__ import annotations
 
-from app.discord_bot import DiscordMessageContext, parse_args, route_discord_message, select_mapping
+from app.discord_bot import (
+    DiscordBotAction,
+    DiscordMessageContext,
+    attach_context_status,
+    context_status_payload,
+    parse_args,
+    route_discord_message,
+    select_mapping,
+)
 
 
 def test_select_mapping_prefers_exact_thread() -> None:
@@ -56,6 +64,7 @@ def test_route_project_owner_message() -> None:
         content="전투 시스템 지금 어디까지 됐어?",
     )
     mapping = {
+        "mapping_id": "mapping-7",
         "project_id": 7,
         "conversation_kind": "project",
         "thread_role": "owner-tasks",
@@ -65,7 +74,24 @@ def test_route_project_owner_message() -> None:
 
     assert action.action_type == "project_owner_message"
     assert action.project_id == 7
+    assert action.mapping_id == "mapping-7"
     assert action.needs_owner is True
+
+
+def test_route_context_status_command() -> None:
+    context = DiscordMessageContext(guild_id="guild-1", channel_id="channel-1", content="/context")
+    mapping = {
+        "mapping_id": "mapping-context",
+        "project_id": 7,
+        "conversation_kind": "project",
+        "thread_role": "owner-design",
+    }
+
+    action = route_discord_message(context, mapping)
+
+    assert action.action_type == "context_status_check"
+    assert action.mapping_id == "mapping-context"
+    assert action.needs_owner is False
 
 
 def test_route_approval_inbox_message() -> None:
@@ -114,3 +140,74 @@ def test_parse_args_supports_offline_mapping_options(monkeypatch) -> None:
     assert args.project_id == 7
     assert args.conversation_kind == "project"
     assert args.thread_role == "owner-tasks"
+
+
+def test_parse_args_supports_context_status_options(monkeypatch) -> None:
+    monkeypatch.setattr(
+        "sys.argv",
+        [
+            "discord_bot",
+            "--guild-id",
+            "guild-1",
+            "--channel-id",
+            "channel-1",
+            "--thread-id",
+            "thread-1",
+            "--content",
+            "hello",
+            "--check-context",
+            "--estimated-extra-tokens",
+            "1200",
+            "--threshold-tokens",
+            "260000",
+            "--warning-tokens",
+            "220000",
+            "--auto-compact-summary",
+            "summary",
+            "--archive-mapping",
+            "--continuation-thread-id",
+            "thread-2",
+        ],
+    )
+
+    args = parse_args()
+
+    assert args.check_context is True
+    assert args.estimated_extra_tokens == 1200
+    assert args.threshold_tokens == 260000
+    assert args.warning_tokens == 220000
+    assert args.auto_compact_summary == "summary"
+    assert args.archive_mapping is True
+    assert args.continuation_thread_id == "thread-2"
+
+
+def test_context_status_payload_uses_message_and_thresholds() -> None:
+    payload = context_status_payload(
+        DiscordMessageContext(guild_id="guild-1", channel_id="channel-1", content="hello"),
+        estimated_extra_tokens=12,
+        threshold_tokens=100,
+        warning_tokens=80,
+        auto_compact=True,
+        compact_summary="summary",
+        archive_mapping=True,
+        continuation_discord_thread_id="thread-2",
+    )
+
+    assert payload["recent_messages"] == ["hello"]
+    assert payload["estimated_extra_tokens"] == 12
+    assert payload["threshold_tokens"] == 100
+    assert payload["warning_tokens"] == 80
+    assert payload["auto_compact"] is True
+    assert payload["compact_summary"] == "summary"
+    assert payload["archive_mapping"] is True
+    assert payload["continuation_discord_thread_id"] == "thread-2"
+
+
+def test_attach_context_status_returns_action_with_status() -> None:
+    action = DiscordBotAction(action_type="context_status_check", summary="check", mapping_id="mapping-1")
+
+    updated = attach_context_status(action, {"status": "compact_now"})
+
+    assert updated.action_type == action.action_type
+    assert updated.mapping_id == "mapping-1"
+    assert updated.context_status == {"status": "compact_now"}

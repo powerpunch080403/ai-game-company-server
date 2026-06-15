@@ -28,6 +28,8 @@ class DiscordBotAction:
     project_id: int | None = None
     conversation_kind: str | None = None
     thread_role: str | None = None
+    mapping_id: str | None = None
+    context_status: dict[str, Any] | None = None
     needs_owner: bool = False
     needs_approval: bool = False
 
@@ -64,6 +66,57 @@ class GameCompanyApiClient:
             response.raise_for_status()
             return response.json()
 
+    def context_status(self, mapping_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+        with httpx.Client(timeout=15) as client:
+            response = client.post(
+                f"{self.server}/discord/mappings/{mapping_id}/context-status",
+                json=payload,
+                headers=self.headers(),
+            )
+            response.raise_for_status()
+            return response.json()
+
+
+def context_status_payload(
+    context: DiscordMessageContext,
+    estimated_extra_tokens: int = 0,
+    threshold_tokens: int | None = None,
+    warning_tokens: int | None = None,
+    auto_compact: bool = False,
+    compact_summary: str = "",
+    archive_mapping: bool = False,
+    continuation_discord_thread_id: str | None = None,
+) -> dict[str, Any]:
+    payload: dict[str, Any] = {
+        "recent_messages": [context.content] if context.content else [],
+        "estimated_extra_tokens": estimated_extra_tokens,
+        "auto_compact": auto_compact,
+        "compact_summary": compact_summary,
+        "archive_mapping": archive_mapping,
+        "continuation_discord_thread_id": continuation_discord_thread_id,
+    }
+    if threshold_tokens is not None:
+        payload["threshold_tokens"] = threshold_tokens
+    if warning_tokens is not None:
+        payload["warning_tokens"] = warning_tokens
+    return payload
+
+
+def attach_context_status(action: DiscordBotAction, context_status: dict[str, Any] | None) -> DiscordBotAction:
+    if context_status is None:
+        return action
+    return DiscordBotAction(
+        action_type=action.action_type,
+        summary=action.summary,
+        project_id=action.project_id,
+        conversation_kind=action.conversation_kind,
+        thread_role=action.thread_role,
+        mapping_id=action.mapping_id,
+        context_status=context_status,
+        needs_owner=action.needs_owner,
+        needs_approval=action.needs_approval,
+    )
+
 
 def select_mapping(mappings: list[dict[str, Any]], context: DiscordMessageContext) -> dict[str, Any] | None:
     exact = [
@@ -98,6 +151,7 @@ def route_discord_message(context: DiscordMessageContext, mapping: dict[str, Any
     conversation_kind = str(mapping.get("conversation_kind") or "")
     thread_role = str(mapping.get("thread_role") or "")
     project_id = mapping.get("project_id")
+    mapping_id = mapping.get("mapping_id")
 
     if content.lower() in {"ping", "!ping", "/ping"}:
         return DiscordBotAction(
@@ -106,6 +160,17 @@ def route_discord_message(context: DiscordMessageContext, mapping: dict[str, Any
             project_id=project_id,
             conversation_kind=conversation_kind,
             thread_role=thread_role,
+            mapping_id=mapping_id,
+        )
+
+    if content.lower() in {"!context", "/context", "!context-status", "/context-status"}:
+        return DiscordBotAction(
+            action_type="context_status_check",
+            summary="Check whether this mapped conversation should be compacted.",
+            project_id=project_id,
+            conversation_kind=conversation_kind,
+            thread_role=thread_role,
+            mapping_id=mapping_id,
         )
 
     if conversation_kind == "approval_inbox":
@@ -115,6 +180,7 @@ def route_discord_message(context: DiscordMessageContext, mapping: dict[str, Any
             project_id=project_id,
             conversation_kind=conversation_kind,
             thread_role=thread_role,
+            mapping_id=mapping_id,
             needs_approval=True,
         )
 
@@ -125,6 +191,7 @@ def route_discord_message(context: DiscordMessageContext, mapping: dict[str, Any
             project_id=project_id,
             conversation_kind=conversation_kind,
             thread_role=thread_role,
+            mapping_id=mapping_id,
             needs_owner=True,
         )
 
@@ -135,6 +202,7 @@ def route_discord_message(context: DiscordMessageContext, mapping: dict[str, Any
             project_id=project_id,
             conversation_kind=conversation_kind,
             thread_role=thread_role,
+            mapping_id=mapping_id,
             needs_owner=True,
         )
 
@@ -145,6 +213,7 @@ def route_discord_message(context: DiscordMessageContext, mapping: dict[str, Any
             project_id=project_id,
             conversation_kind=conversation_kind,
             thread_role=thread_role,
+            mapping_id=mapping_id,
         )
 
     if conversation_kind == "artifact":
@@ -154,6 +223,7 @@ def route_discord_message(context: DiscordMessageContext, mapping: dict[str, Any
             project_id=project_id,
             conversation_kind=conversation_kind,
             thread_role=thread_role,
+            mapping_id=mapping_id,
         )
 
     if conversation_kind == "test_runner":
@@ -163,6 +233,7 @@ def route_discord_message(context: DiscordMessageContext, mapping: dict[str, Any
             project_id=project_id,
             conversation_kind=conversation_kind,
             thread_role=thread_role,
+            mapping_id=mapping_id,
         )
 
     return DiscordBotAction(
@@ -171,6 +242,7 @@ def route_discord_message(context: DiscordMessageContext, mapping: dict[str, Any
         project_id=project_id,
         conversation_kind=conversation_kind,
         thread_role=thread_role,
+        mapping_id=mapping_id,
     )
 
 
@@ -185,6 +257,13 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--project-id", type=int, default=None, help="Optional offline dry-run project id.")
     parser.add_argument("--conversation-kind", default="", help="Optional offline dry-run conversation kind.")
     parser.add_argument("--thread-role", default="", help="Optional offline dry-run thread role.")
+    parser.add_argument("--check-context", action="store_true", help="Call the server context-status endpoint.")
+    parser.add_argument("--estimated-extra-tokens", type=int, default=0)
+    parser.add_argument("--threshold-tokens", type=int, default=None)
+    parser.add_argument("--warning-tokens", type=int, default=None)
+    parser.add_argument("--auto-compact-summary", default="")
+    parser.add_argument("--archive-mapping", action="store_true")
+    parser.add_argument("--continuation-thread-id", default=None)
     return parser.parse_args()
 
 
@@ -201,14 +280,29 @@ def main() -> int:
         mapping = json.loads(args.mapping_json)
     elif args.conversation_kind or args.thread_role or args.project_id is not None:
         mapping = {
+            "mapping_id": args.thread_id or "offline-mapping",
             "project_id": args.project_id,
             "conversation_kind": args.conversation_kind,
             "thread_role": args.thread_role,
         }
     else:
-        mappings = GameCompanyApiClient.from_env().list_discord_mappings(context)
+        api = GameCompanyApiClient.from_env()
+        mappings = api.list_discord_mappings(context)
         mapping = select_mapping(mappings, context)
     action = route_discord_message(context, mapping)
+    if args.check_context and mapping and mapping.get("mapping_id"):
+        api = GameCompanyApiClient.from_env()
+        status_payload = context_status_payload(
+            context,
+            estimated_extra_tokens=args.estimated_extra_tokens,
+            threshold_tokens=args.threshold_tokens,
+            warning_tokens=args.warning_tokens,
+            auto_compact=bool(args.auto_compact_summary),
+            compact_summary=args.auto_compact_summary,
+            archive_mapping=args.archive_mapping,
+            continuation_discord_thread_id=args.continuation_thread_id,
+        )
+        action = attach_context_status(action, api.context_status(mapping["mapping_id"], status_payload))
     print(json.dumps(asdict(action), ensure_ascii=False, indent=2))
     return 0
 
