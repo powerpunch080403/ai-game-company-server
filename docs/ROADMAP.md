@@ -24,6 +24,7 @@ The server can already run the core loop:
 16. Split FastAPI endpoints into route modules under `app/api/routes`.
 17. Add a dry-run Discord bot routing skeleton against stored mapping APIs.
 18. Add Test Runner local report to WorkerReport mapping helper.
+19. Add Test Runner configured phase execution wrapper.
 
 ## Next Work While Main Computer Is Unavailable
 
@@ -80,7 +81,9 @@ Most of this is already implemented.
 3. Test Runner Contract
    - Baseline contract documented in `docs/TEST_RUNNER_CONTRACT.md`.
    - Local report mapping helper and tests are implemented.
-   - Next: add a local runner wrapper that executes configured phases.
+   - Local runner wrapper executes configured phases and writes local reports.
+   - Next: add a full test runner worker loop that leases tasks, prepares
+     workspace, runs phases, maps reports, and submits to the server.
 
 4. Game Project Template
    - Engine undecided.
@@ -141,7 +144,7 @@ These do not require the main computer:
 - Add template scaffold script and tests.
 - Add artifact streaming upload design/tests.
 - Add real Discord Gateway adapter for the bot skeleton.
-- Add test runner command execution wrapper.
+- Add full test runner worker loop.
 - Add API examples for the project planning flow.
 - Turn `docs/SERVER_CONFIGURATION.md` into systemd unit files when always-on
   mode is approved.

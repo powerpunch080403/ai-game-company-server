@@ -301,6 +301,13 @@ Implemented after the baseline design:
   - It maps phases to `tests`, successful artifacts to `files_changed`, status
     and timestamps to worker timing fields, and issues to the server report
     issue string.
+- Test Runner phase execution:
+  - `app.test_runner` reads `.game-company/test_runner.json`, runs
+    setup/build/test/run phases, writes phase logs, and creates
+    `test-runner-report.json`.
+  - `scripts/run_test_runner.*` exposes the local runner from CLI.
+  - It does not yet lease tasks or submit reports; combine it with workspace
+    preparation and `app.test_runner_report` in the next worker-loop step.
 
 These contracts deliberately do not choose the first real game engine and do not
 make merge warnings blocking. Ask the user before making either decision.

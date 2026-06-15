@@ -114,6 +114,35 @@ GAME_COMPANY_WORKSPACE
 GAME_COMPANY_TEST_ARTIFACT_DIR
 ```
 
+Implemented runner wrapper:
+
+```bash
+python -m app.test_runner \
+  --package runs/workspace-task-12/task_package.json \
+  --workspace /path/to/game-workspace
+```
+
+Wrapper scripts:
+
+```text
+scripts/run_test_runner.sh
+scripts/run_test_runner.ps1
+```
+
+This wrapper:
+
+- Reads `.game-company/test_runner.json`.
+- Creates `.game-company/artifacts/task-{task_id}/run-{timestamp}/`.
+- Runs `setup`, `build`, `test`, and `run` commands in order.
+- Stops at the first failed command.
+- Applies the shared worker command safety gate.
+- Writes phase logs and `test-runner-report.json`.
+- Returns exit code 0 only when the local report status is `success`.
+
+It does not yet lease tasks or submit reports by itself. The next integration
+step is to combine workspace preparation, `app.test_runner`, and
+`app.test_runner_report` into a full test runner worker loop.
+
 ## Artifact Layout
 
 The default artifact path should be:
@@ -328,10 +357,12 @@ blocking.
 
 1. Keep this document as the contract.
 2. Add `.game-company/test_runner.json` to new game templates.
-3. Add a `scripts/run_test_runner.*` wrapper that reuses workspace worker
-   mechanics.
+3. `scripts/run_test_runner.*` wrapper and `app.test_runner` phase execution
+   are implemented.
 4. Report mapping helper and local unit tests are implemented.
-5. Add Unity-specific defaults only after the first real Unity project is
+5. Add a full worker loop that leases `test_runner` tasks, prepares workspace,
+   runs phases, maps reports, and submits to the server.
+6. Add Unity-specific defaults only after the first real Unity project is
    selected.
 
 Visual execution and MCP tool integration are designed in
