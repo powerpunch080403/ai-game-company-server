@@ -36,6 +36,7 @@ The server can already run the core loop:
     `/owner/runs`.
 25. Add Discord Gateway runtime skeleton that reuses the dry-run router and can
     reply to mapped messages.
+26. Add Discord bot setup doctor and credential-safe setup guide.
 
 ## Next Work While Main Computer Is Unavailable
 
@@ -136,6 +137,7 @@ Most of this is already implemented.
    - Discord Gateway runtime skeleton is implemented with message receive,
      mapping lookup, context-status replies, and optional safe Owner run
      submission.
+   - Discord setup doctor and setup guide are implemented.
    - Next: test the Gateway runtime in a real Discord server.
    - Next: connect natural-language approval conversations.
 

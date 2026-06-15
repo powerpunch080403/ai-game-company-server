@@ -303,6 +303,13 @@ Implemented after the baseline design:
     `--submit-owner-run`; submission defaults to `dry_run=true`.
   - `--execute-owner-run` is required to request `dry_run=false`.
   - It still needs real Discord server testing and richer approval handling.
+- Discord bot setup:
+  - `docs/DISCORD_BOT_SETUP.md` explains credential-safe Discord bot setup.
+  - `app.discord_setup` checks local env, dependency availability, optional
+    invite URL generation, and server `/health`.
+  - `scripts/check_discord_setup.*` exposes the setup doctor.
+  - Never ask the user to paste Discord account credentials or bot tokens into
+    chat; they should put secrets in local `.env`.
 - Test Runner report mapping:
   - `app.test_runner_report.map_test_runner_report` converts local
     `test-runner-report.json` files into `WorkerReportCreate` JSON.

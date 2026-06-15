@@ -61,6 +61,7 @@ Not implemented yet:
 - [Roadmap](docs/ROADMAP.md)
 - [Server Configuration](docs/SERVER_CONFIGURATION.md)
 - [Discord Operator Console](docs/DISCORD_OPERATOR_CONSOLE.md)
+- [Discord Bot Setup](docs/DISCORD_BOT_SETUP.md)
 - [Context Compaction](docs/CONTEXT_COMPACTION.md)
 - [Test Runner Contract](docs/TEST_RUNNER_CONTRACT.md)
 - [Game Project Template](docs/GAME_PROJECT_TEMPLATE.md)
@@ -134,6 +135,7 @@ GAME_COMPANY_WORKER_MODEL=
 
 GAME_COMPANY_DISCORD_SERVER_TOKEN=
 DISCORD_BOT_TOKEN=
+DISCORD_APPLICATION_ID=
 ```
 
 If any API token is configured, non-public API requests must include:
@@ -461,12 +463,28 @@ run.
 
 ## Discord Gateway Runtime
 
-Install dependencies and set tokens:
+Create the bot in the Discord Developer Portal yourself. Do not share your
+Discord account password or bot token in chat.
+
+Set tokens locally in `.env`:
 
 ```env
 DISCORD_BOT_TOKEN=your-discord-bot-token
+DISCORD_APPLICATION_ID=your-discord-application-id
 GAME_COMPANY_DISCORD_SERVER_TOKEN=owner-or-admin-token-for-server-api
 GAME_COMPANY_SERVER=http://127.0.0.1:8080
+```
+
+Check setup:
+
+```bash
+./scripts/check_discord_setup.sh
+```
+
+Windows:
+
+```powershell
+.\scripts\check_discord_setup.ps1
 ```
 
 Run the Gateway runtime:
