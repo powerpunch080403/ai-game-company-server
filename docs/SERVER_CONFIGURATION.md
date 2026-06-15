@@ -446,7 +446,9 @@ Rules:
   are understood.
 - Do not expose raw port 8080 directly on the public internet.
 - Put public access behind HTTPS reverse proxy or tunnel only when needed.
-- Keep `GAME_COMPANY_API_TOKEN` required for non-public paths.
+- Keep API tokens required for non-public paths.
+- Use role-scoped tokens for normal operation instead of sharing the admin
+  token with every worker.
 - Prefer Tailscale/SSH for admin operations and recovery.
 - Use SSH for deploy, recovery, and manual inspection.
 - Use HTTP API for workers and Owner control-plane operations.
@@ -455,8 +457,24 @@ Rules:
 
 Required v1 security baseline:
 
-- Set `GAME_COMPANY_API_TOKEN` on any non-local server.
+- Set at least one API token on any non-local server.
+- Treat `GAME_COMPANY_API_TOKEN` as a legacy/admin break-glass token.
+- Prefer role-scoped tokens:
+  - `GAME_COMPANY_OWNER_TOKEN` for Owner operations, merge, approval, and
+    project/task management.
+  - `GAME_COMPANY_WORKER_TOKEN` for lease, claim, report, and task package
+    reads.
+  - `GAME_COMPANY_READONLY_TOKEN` for dashboard and other `GET` reads.
+  - `GAME_COMPANY_ARTIFACT_TOKEN` for artifact metadata and content transfer.
 - Pass token as `Authorization: Bearer ...`.
+- Worker command execution uses a v1 command safety gate:
+  - Dangerous patterns such as `rm -rf`, `curl | bash`, encoded PowerShell,
+    `git push --force`, and `git reset --hard` are blocked.
+  - Optional `GAME_COMPANY_ALLOWED_COMMAND_PREFIXES` can restrict worker
+    commands to known prefixes such as `python -m pytest` or `npm test`.
+- Artifact uploads use `GAME_COMPANY_MAX_ARTIFACT_UPLOAD_BYTES`; default is
+  100 MiB. Large video/build artifacts should be split or moved to later object
+  storage before v1.5.
 - For public access, use HTTPS in front of the API.
 - Do not expose raw uvicorn directly to the public internet.
 - Store `.env` on the server only.
@@ -472,9 +490,15 @@ Recommended `.env` skeleton:
 GAME_COMPANY_DB_PATH=/home/powerpunch/ai-game-company-server/data/game_company.sqlite3
 GAME_COMPANY_HOST=0.0.0.0
 GAME_COMPANY_PORT=8080
-GAME_COMPANY_API_TOKEN=replace-with-generated-token
+GAME_COMPANY_API_TOKEN=replace-with-generated-admin-token
+GAME_COMPANY_OWNER_TOKEN=replace-with-generated-owner-token
+GAME_COMPANY_WORKER_TOKEN=replace-with-generated-worker-token
+GAME_COMPANY_READONLY_TOKEN=replace-with-generated-readonly-token
+GAME_COMPANY_ARTIFACT_TOKEN=replace-with-generated-artifact-token
+GAME_COMPANY_ALLOWED_COMMAND_PREFIXES=python -m pytest,npm test
 GAME_COMPANY_BACKUP_DIR=/home/powerpunch/ai-game-company-server/backups
 GAME_COMPANY_ARTIFACT_ROOT=/home/powerpunch/ai-game-company-server/artifacts
+GAME_COMPANY_MAX_ARTIFACT_UPLOAD_BYTES=104857600
 
 GAME_COMPANY_OWNER_COMMAND=
 GAME_COMPANY_OWNER_TIMEOUT_SECONDS=900

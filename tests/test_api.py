@@ -36,10 +36,15 @@ def client(tmp_path: Path) -> Iterator[TestClient]:
             default_task_minutes=15,
             owner_recall_minutes=30,
             api_token="",
+            owner_token="",
+            worker_token="",
+            readonly_token="",
+            artifact_token="",
             owner_command="",
             owner_timeout_seconds=900,
             owner_runs_dir=Path("./owner-runs-test"),
             artifact_root=tmp_path / "artifacts",
+            max_artifact_upload_bytes=1024,
         )
 
     app.dependency_overrides[get_repo] = repo_override
@@ -436,18 +441,102 @@ def test_api_token_required_when_configured(client: TestClient) -> None:
         port=8080,
         default_task_minutes=15,
         owner_recall_minutes=30,
-        api_token="secret-token",
+        api_token="admin-token",
+        owner_token="owner-token",
+        worker_token="worker-token",
+        readonly_token="readonly-token",
+        artifact_token="artifact-token",
         owner_command="",
         owner_timeout_seconds=900,
         owner_runs_dir=Path("./owner-runs-test"),
         artifact_root=Path("./artifacts-test"),
+        max_artifact_upload_bytes=1024,
     )
     try:
         assert client.get("/health").status_code == 200
         unauthorized = client.get("/tasks")
         assert unauthorized.status_code == 401
-        authorized = client.get("/tasks", headers={"Authorization": "Bearer secret-token"})
-        assert authorized.status_code == 200
+        admin = client.get("/tasks", headers={"Authorization": "Bearer admin-token"})
+        assert admin.status_code == 200
+        readonly = client.get("/tasks", headers={"Authorization": "Bearer readonly-token"})
+        assert readonly.status_code == 200
+        token_header_fallback = client.get(
+            "/tasks",
+            headers={"Authorization": "Bearer wrong-token", "x-api-token": "readonly-token"},
+        )
+        assert token_header_fallback.status_code == 200
+        readonly_write = client.post(
+            "/tasks",
+            headers={"Authorization": "Bearer readonly-token"},
+            json={
+                "role": "code_worker",
+                "goal": "Should be forbidden",
+                "requirements": ["No writes"],
+                "success_criteria": ["Rejected"],
+                "estimated_minutes": 15,
+                "memory_refs": [],
+                "branch": "worker/forbidden-readonly-write",
+            },
+        )
+        assert readonly_write.status_code == 403
+
+        owner_task = client.post(
+            "/tasks",
+            headers={"Authorization": "Bearer owner-token"},
+            json={
+                "role": "code_worker",
+                "goal": "Token-scoped worker task",
+                "requirements": ["Worker can lease"],
+                "success_criteria": ["Worker can read package"],
+                "estimated_minutes": 15,
+                "memory_refs": [],
+                "branch": "worker/token-scoped-task",
+            },
+        )
+        assert owner_task.status_code == 200
+
+        worker_list = client.get("/tasks", headers={"Authorization": "Bearer worker-token"})
+        assert worker_list.status_code == 403
+        worker_lease = client.post(
+            "/workers/code-auth/lease",
+            headers={"Authorization": "Bearer worker-token"},
+            json={"role": "code_worker", "lease_minutes": 30},
+        )
+        assert worker_lease.status_code == 200
+        worker_package = client.get(
+            f"/tasks/{worker_lease.json()['id']}/package",
+            headers={"Authorization": "Bearer worker-token"},
+        )
+        assert worker_package.status_code == 200
+        worker_dashboard = client.get("/owner/dashboard", headers={"Authorization": "Bearer worker-token"})
+        assert worker_dashboard.status_code == 403
+
+        owner_project = client.post(
+            "/projects",
+            headers={"Authorization": "Bearer owner-token"},
+            json={
+                "name": "Artifact Token Project",
+                "description": "",
+                "engine": "undecided",
+                "repo_url": "",
+                "workspace_path": "",
+                "base_branch": "main",
+            },
+        )
+        assert owner_project.status_code == 200
+        artifact_create = client.post(
+            "/artifacts",
+            headers={"Authorization": "Bearer artifact-token"},
+            json={
+                "artifact_id": "auth-artifact-1",
+                "project_id": owner_project.json()["id"],
+                "artifact_type": "log",
+                "filename": "auth.log",
+            },
+        )
+        assert artifact_create.status_code == 200
+        artifact_blocked = client.get("/tasks", headers={"Authorization": "Bearer artifact-token"})
+        assert artifact_blocked.status_code == 403
     finally:
         main_module.settings = original_settings
 
@@ -690,6 +779,23 @@ def test_artifact_metadata_upload_and_download(client: TestClient) -> None:
     downloaded = client.get("/artifacts/shot-001/content")
     assert downloaded.status_code == 200
     assert downloaded.content == b"fake png bytes"
+
+    large_artifact = client.post(
+        "/artifacts",
+        json={
+            "artifact_id": "large-log-001",
+            "project_id": project["id"],
+            "artifact_type": "log",
+            "filename": "large.log",
+        },
+    )
+    assert large_artifact.status_code == 200
+    too_large = client.put(
+        "/artifacts/large-log-001/content",
+        params={"filename": "large.log", "content_type": "text/plain"},
+        content=b"x" * 2048,
+    )
+    assert too_large.status_code == 413
 
 
 def test_approval_request_and_decision_flow(client: TestClient) -> None:

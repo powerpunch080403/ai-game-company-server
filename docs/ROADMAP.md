@@ -18,6 +18,9 @@ The server can already run the core loop:
 10. Store artifact metadata and raw artifact files.
 11. Store approval requests and one-way approval decisions.
 12. Store Discord guild/channel/thread mappings for project operation rooms.
+13. Protect APIs with role-scoped Owner, Worker, Readonly, and Artifact tokens.
+14. Block dangerous worker shell command patterns and support command allowlists.
+15. Limit artifact upload size with a configurable server setting.
 
 ## Next Work While Main Computer Is Unavailable
 
@@ -51,6 +54,7 @@ Work that can be done locally:
 - Machine/Worker heartbeat
 - Artifact metadata/upload/download API
 - Approval/Decision API
+- Role-scoped API tokens
 - Clear handoff docs
 - Remote deploy script
 
@@ -63,18 +67,25 @@ Most of this is already implemented.
    - Owner prompt now follows the planning contract.
    - Next: add optional local validation helper.
 
-2. Test Runner Contract
+2. Security and Execution Control
+   - Role-scoped tokens are implemented.
+   - Worker command denylist and optional allowlist are implemented.
+   - Artifact upload size limit is implemented.
+   - Next: add true streaming upload for large artifacts.
+   - Next: split server routes before `app/main.py` grows further.
+
+3. Test Runner Contract
    - Baseline contract documented in `docs/TEST_RUNNER_CONTRACT.md`.
    - Next: add a local runner wrapper and report mapping tests.
 
-3. Game Project Template
+4. Game Project Template
    - Engine undecided.
    - Keep template minimal until actual game starts.
    - Support Unity later without locking the server to Unity.
    - Baseline contract documented in `docs/GAME_PROJECT_TEMPLATE.md`.
    - Next: add a scaffold script after the contract is reviewed.
 
-4. Documentation
+5. Documentation
    - Architecture blueprint documented in `docs/ARCHITECTURE_BLUEPRINT.md`.
    - Hardware/machine inventory documented in `docs/HARDWARE_ENVIRONMENT.md`.
    - Fix or replace corrupted README.
@@ -85,7 +96,7 @@ Most of this is already implemented.
    - Baseline long-term project memory documented in `docs/LONG_TERM_PROJECT_MEMORY.md`.
    - Baseline visual/MCP tool integration documented in `docs/VISUAL_TOOL_INTEGRATION.md`.
 
-5. Owner Review Policy
+6. Owner Review Policy
    - Decide which warnings block merge.
    - Add configurable thresholds.
 
@@ -118,6 +129,8 @@ These do not require the main computer:
 
 - Rewrite the corrupted README in clean UTF-8 Korean.
 - Add template scaffold script and tests.
+- Add artifact streaming upload design/tests.
+- Split `app/main.py` into route modules.
 - Add test runner report mapping helpers and tests.
 - Add API examples for the project planning flow.
 - Turn `docs/SERVER_CONFIGURATION.md` into systemd unit files when always-on

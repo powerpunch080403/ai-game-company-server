@@ -10,6 +10,7 @@ from typing import Any
 
 from dotenv import load_dotenv
 
+from app.command_safety import CommandSafetyError, validate_shell_command
 from app.git_workspace import git_executable, prepare_branch, resolve_git_settings, run_git
 from app.worker_runner import request_json, write_task_package
 
@@ -27,6 +28,10 @@ def git_status_files(workspace: Path) -> list[str]:
 
 
 def run_workspace_command(command: str, workspace: Path, package: dict[str, Any], run_dir: Path) -> tuple[int, str]:
+    try:
+        validate_shell_command(command)
+    except CommandSafetyError as exc:
+        return 126, f"Command blocked by safety policy: {exc}"
     env = os.environ.copy()
     env["GAME_COMPANY_TASK_ID"] = str(package["task"]["id"])
     env["GAME_COMPANY_TASK_PACKAGE"] = str(run_dir / "task_package.json")

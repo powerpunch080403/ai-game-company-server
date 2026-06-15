@@ -261,6 +261,24 @@ Implemented after the baseline design:
   - This records which Discord guild/channel/thread belongs to which project,
     conversation kind, and thread role. Archived mappings keep their summary
     memory key so long conversations can rotate safely.
+- Role-scoped token authorization:
+  - `GAME_COMPANY_API_TOKEN` remains a legacy/admin token for full access.
+  - `GAME_COMPANY_OWNER_TOKEN` can perform Owner and operational actions.
+  - `GAME_COMPANY_WORKER_TOKEN` can lease, claim, report, heartbeat, and read
+    task packages.
+  - `GAME_COMPANY_READONLY_TOKEN` can perform `GET` requests only.
+  - `GAME_COMPANY_ARTIFACT_TOKEN` can access artifact endpoints only.
+- Worker command safety gate:
+  - `app.command_safety.validate_shell_command` blocks dangerous command
+    patterns before `shell=True` worker commands run.
+  - `GAME_COMPANY_ALLOWED_COMMAND_PREFIXES` can restrict worker commands to
+    approved prefixes.
+  - This is a v1 guardrail, not a full sandbox.
+- Artifact upload size limit:
+  - `GAME_COMPANY_MAX_ARTIFACT_UPLOAD_BYTES` defaults to 100 MiB.
+  - Uploads above the configured limit return HTTP 413.
+  - Uploads still use a simple request-body read in v1; true streaming upload is
+    a later hardening task.
 
 These contracts deliberately do not choose the first real game engine and do not
 make merge warnings blocking. Ask the user before making either decision.

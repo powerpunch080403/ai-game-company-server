@@ -12,12 +12,14 @@ from typing import Any
 import httpx
 from dotenv import load_dotenv
 
+from app.command_safety import CommandSafetyError, validate_shell_command
+
 load_dotenv()
 
 
 def request_json(method: str, url: str, **kwargs: Any) -> Any:
     headers = dict(kwargs.pop("headers", {}))
-    api_token = os.getenv("GAME_COMPANY_API_TOKEN", "")
+    api_token = os.getenv("GAME_COMPANY_WORKER_TOKEN") or os.getenv("GAME_COMPANY_API_TOKEN", "")
     if api_token:
         headers["Authorization"] = f"Bearer {api_token}"
     with httpx.Client(timeout=30) as client:
@@ -95,6 +97,10 @@ def build_report(
 
 
 def run_command(command: str, run_dir: Path, package: dict[str, Any]) -> tuple[int, str]:
+    try:
+        validate_shell_command(command)
+    except CommandSafetyError as exc:
+        return 126, f"Command blocked by safety policy: {exc}"
     env = os.environ.copy()
     env["GAME_COMPANY_TASK_PACKAGE"] = str(run_dir / "task_package.json")
     env["GAME_COMPANY_TASK_ID"] = str(package["task"]["id"])
