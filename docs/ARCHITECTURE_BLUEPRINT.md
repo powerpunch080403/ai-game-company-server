@@ -61,6 +61,7 @@ The current codebase already has the core automation loop:
 - Worker last-seen updates from lease, claim, and report activity.
 - Artifact metadata API.
 - Artifact raw content upload and download API.
+- Approval and decision record API.
 - DB backup script.
 - Remote deploy script.
 
@@ -466,11 +467,11 @@ Done:
 - Worker `last_seen_at` update from task lease, claim, and report activity.
 - Artifact metadata records.
 - Artifact raw content upload/download.
+- Approval/decision records.
 
 Next:
 
-1. Approval/decision records.
-2. Discord mapping records.
-3. Memory tag/search helpers.
-4. Test runner wrapper/report mapping.
-5. Project scaffold script.
+1. Discord mapping records.
+2. Memory tag/search helpers.
+3. Test runner wrapper/report mapping.
+4. Project scaffold script.

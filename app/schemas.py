@@ -185,3 +185,24 @@ class ArtifactCreate(BaseModel):
     release_or_milestone: bool = False
     discord_message_id: str | None = None
     discord_thread_id: str | None = None
+
+
+class ApprovalCreate(BaseModel):
+    approval_id: str | None = None
+    project_id: int | None = None
+    target_type: str = Field(min_length=1)
+    target_id: str | None = None
+    requested_by: str = ""
+    request_summary: str = Field(min_length=1)
+    risk_summary: str = ""
+    approval_message: str = ""
+    discord_message_id: str | None = None
+    discord_thread_id: str | None = None
+    decision_memory_key: str | None = None
+
+
+class ApprovalDecision(BaseModel):
+    status: str = Field(pattern="^(approved|rejected|held|edited|canceled|expired)$")
+    approved_by: str = ""
+    approval_message: str = ""
+    decision_memory_key: str | None = None

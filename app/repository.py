@@ -8,6 +8,8 @@ from typing import Any
 
 from app.db import transaction
 from app.schemas import (
+    ApprovalCreate,
+    ApprovalDecision,
     ArtifactCreate,
     EpicCreate,
     MachineHeartbeat,
@@ -443,6 +445,109 @@ class Repository:
         )
         self.conn.commit()
         return self.get_artifact(artifact_id)
+
+    def create_approval(self, payload: ApprovalCreate) -> dict[str, Any]:
+        if payload.project_id is not None:
+            self.get_project(payload.project_id)
+        approval_id = payload.approval_id or str(uuid.uuid4())
+        timestamp = now_iso()
+        self.conn.execute(
+            """
+            INSERT INTO approval_requests (
+                approval_id, project_id, target_type, target_id, requested_by,
+                approved_by, status, request_summary, risk_summary,
+                approval_message, discord_message_id, discord_thread_id,
+                decision_memory_key, created_at, updated_at, decided_at
+            )
+            VALUES (?, ?, ?, ?, ?, NULL, 'pending', ?, ?, ?, ?, ?, ?, ?, ?, NULL)
+            """,
+            (
+                approval_id,
+                payload.project_id,
+                payload.target_type,
+                payload.target_id,
+                payload.requested_by,
+                payload.request_summary,
+                payload.risk_summary,
+                payload.approval_message,
+                payload.discord_message_id,
+                payload.discord_thread_id,
+                payload.decision_memory_key,
+                timestamp,
+                timestamp,
+            ),
+        )
+        self.conn.commit()
+        return self.get_approval(approval_id)
+
+    def get_approval(self, approval_id: str) -> dict[str, Any]:
+        row = self.conn.execute(
+            "SELECT * FROM approval_requests WHERE approval_id = ?",
+            (approval_id,),
+        ).fetchone()
+        if row is None:
+            raise KeyError("approval request not found")
+        return row_to_dict(row) or {}
+
+    def list_approvals(
+        self,
+        status: str | None = None,
+        project_id: int | None = None,
+        target_type: str | None = None,
+    ) -> list[dict[str, Any]]:
+        clauses: list[str] = []
+        params: list[Any] = []
+        if status:
+            clauses.append("status = ?")
+            params.append(status)
+        if project_id is not None:
+            clauses.append("project_id = ?")
+            params.append(project_id)
+        if target_type:
+            clauses.append("target_type = ?")
+            params.append(target_type)
+        where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
+        rows = self.conn.execute(
+            f"SELECT * FROM approval_requests {where} ORDER BY created_at DESC, approval_id ASC",
+            params,
+        ).fetchall()
+        return [row_to_dict(row) or {} for row in rows]
+
+    def decide_approval(self, approval_id: str, payload: ApprovalDecision) -> dict[str, Any]:
+        approval = self.get_approval(approval_id)
+        if approval["status"] != "pending":
+            raise ValueError("only pending approval requests can be decided")
+        timestamp = now_iso()
+        approved_by = payload.approved_by if payload.approved_by else approval["approved_by"]
+        approval_message = payload.approval_message if payload.approval_message else approval["approval_message"]
+        decision_memory_key = (
+            payload.decision_memory_key
+            if payload.decision_memory_key is not None
+            else approval["decision_memory_key"]
+        )
+        self.conn.execute(
+            """
+            UPDATE approval_requests
+            SET status = ?,
+                approved_by = ?,
+                approval_message = ?,
+                decision_memory_key = ?,
+                updated_at = ?,
+                decided_at = ?
+            WHERE approval_id = ?
+            """,
+            (
+                payload.status,
+                approved_by,
+                approval_message,
+                decision_memory_key,
+                timestamp,
+                timestamp,
+                approval_id,
+            ),
+        )
+        self.conn.commit()
+        return self.get_approval(approval_id)
 
     def get_project_tree(self, project_id: int) -> dict[str, Any]:
         project = self.get_project(project_id)

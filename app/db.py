@@ -200,6 +200,29 @@ CREATE TABLE IF NOT EXISTS artifacts (
 
 CREATE INDEX IF NOT EXISTS idx_artifacts_project_task ON artifacts(project_id, task_id);
 CREATE INDEX IF NOT EXISTS idx_artifacts_type ON artifacts(artifact_type);
+
+CREATE TABLE IF NOT EXISTS approval_requests (
+    approval_id TEXT PRIMARY KEY,
+    project_id INTEGER REFERENCES projects(id) ON DELETE SET NULL,
+    target_type TEXT NOT NULL,
+    target_id TEXT,
+    requested_by TEXT NOT NULL DEFAULT '',
+    approved_by TEXT,
+    status TEXT NOT NULL DEFAULT 'pending',
+    request_summary TEXT NOT NULL,
+    risk_summary TEXT NOT NULL DEFAULT '',
+    approval_message TEXT NOT NULL DEFAULT '',
+    discord_message_id TEXT,
+    discord_thread_id TEXT,
+    decision_memory_key TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    decided_at TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_approval_requests_status ON approval_requests(status);
+CREATE INDEX IF NOT EXISTS idx_approval_requests_project ON approval_requests(project_id);
+CREATE INDEX IF NOT EXISTS idx_approval_requests_target ON approval_requests(target_type, target_id);
 """
 
 PROJECT_COLUMNS = {

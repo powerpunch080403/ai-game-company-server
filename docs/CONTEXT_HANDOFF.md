@@ -53,6 +53,7 @@ Do not rely on the remote being available. If the main computer is down, continu
 - Machine and Worker heartbeat endpoints
 - Worker registry `last_seen_at` updates from task lease, claim, and report
 - Artifact metadata, raw upload, and raw download APIs
+- Approval/Decision request and decision APIs
 - DB backup script
 - Remote deploy script
 
@@ -245,6 +246,12 @@ Implemented after the baseline design:
   - `GET /artifacts/{artifact_id}/content`
   - Content is stored under `GAME_COMPANY_ARTIFACT_ROOT`, separated by project
     and task/manual segment.
+- Approval API:
+  - `POST /approvals`
+  - `GET /approvals`
+  - `GET /approvals/{approval_id}`
+  - `POST /approvals/{approval_id}/decision`
+  - Decisions are one-way from `pending`; repeated decisions return conflict.
 
 These contracts deliberately do not choose the first real game engine and do not
 make merge warnings blocking. Ask the user before making either decision.

@@ -16,6 +16,7 @@ The server can already run the core loop:
 8. Register machines and workers.
 9. Track worker/machine heartbeat and worker last-seen activity.
 10. Store artifact metadata and raw artifact files.
+11. Store approval requests and one-way approval decisions.
 
 ## Next Work While Main Computer Is Unavailable
 
@@ -48,6 +49,7 @@ Work that can be done locally:
 - Worker/Machine Registry
 - Machine/Worker heartbeat
 - Artifact metadata/upload/download API
+- Approval/Decision API
 - Clear handoff docs
 - Remote deploy script
 
@@ -125,5 +127,4 @@ These do not require the main computer:
   memory ingestion.
 - Add visual artifact and MCP tool operation schemas before connecting Blender
   or game engine tools.
-- Add Approval/Decision and Discord mapping APIs before implementing the
-  Discord bot.
+- Add Discord mapping APIs before implementing the Discord bot.

@@ -692,6 +692,83 @@ def test_artifact_metadata_upload_and_download(client: TestClient) -> None:
     assert downloaded.content == b"fake png bytes"
 
 
+def test_approval_request_and_decision_flow(client: TestClient) -> None:
+    project = client.post(
+        "/projects",
+        json={
+            "name": "Approval Project",
+            "description": "",
+            "engine": "undecided",
+            "repo_url": "https://example.test/approval.git",
+            "workspace_path": "/tmp/approval-workspace",
+            "base_branch": "main",
+        },
+    ).json()
+
+    payload = {
+        "approval_id": "repo-setup-1",
+        "project_id": project["id"],
+        "target_type": "repo_setup",
+        "target_id": "approval-project",
+        "requested_by": "owner",
+        "request_summary": "Create GitHub private repo and project workspace.",
+        "risk_summary": "Creates external GitHub repo and local workspace.",
+        "approval_message": "좋아 진행해 라고 답하면 진행.",
+        "discord_message_id": "123",
+        "discord_thread_id": "456",
+        "decision_memory_key": "decision_repo_setup_1",
+    }
+    created = client.post("/approvals", json=payload)
+    assert created.status_code == 200
+    body = created.json()
+    assert body["approval_id"] == "repo-setup-1"
+    assert body["status"] == "pending"
+    assert body["approved_by"] is None
+    assert body["decided_at"] is None
+
+    pending = client.get("/approvals", params={"status": "pending", "project_id": project["id"]})
+    assert pending.status_code == 200
+    assert [item["approval_id"] for item in pending.json()] == ["repo-setup-1"]
+
+    fetched = client.get("/approvals/repo-setup-1")
+    assert fetched.status_code == 200
+    assert fetched.json()["target_type"] == "repo_setup"
+
+    decided = client.post(
+        "/approvals/repo-setup-1/decision",
+        json={
+            "status": "approved",
+            "approved_by": "user",
+            "approval_message": "좋아 진행해.",
+            "decision_memory_key": "decision_repo_setup_approved",
+        },
+    )
+    assert decided.status_code == 200
+    assert decided.json()["status"] == "approved"
+    assert decided.json()["approved_by"] == "user"
+    assert decided.json()["approval_message"] == "좋아 진행해."
+    assert decided.json()["decided_at"] is not None
+
+    duplicate_decision = client.post(
+        "/approvals/repo-setup-1/decision",
+        json={"status": "rejected", "approved_by": "user", "approval_message": "Never mind."},
+    )
+    assert duplicate_decision.status_code == 409
+
+    invalid_status = client.post(
+        "/approvals",
+        json={
+            "target_type": "merge",
+            "request_summary": "Merge worker branch.",
+        },
+    ).json()
+    invalid_decision = client.post(
+        f"/approvals/{invalid_status['approval_id']}/decision",
+        json={"status": "done"},
+    )
+    assert invalid_decision.status_code == 422
+
+
 def test_owner_run_dry_run_records_prompt(client: TestClient) -> None:
     response = client.post(
         "/owner/runs",

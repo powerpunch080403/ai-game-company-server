@@ -345,11 +345,11 @@ Implemented:
 - Worker `last_seen_at` updates from task lease, claim, and report activity.
 - Artifact metadata API.
 - Artifact raw content upload/download API.
+- Approval decision table/API.
 
 Next:
 
 - Discord mapping table/API.
-- Approval decision table/API.
 - Artifact cleanup job.
 - GitHub repo setup command using `gh`.
 - Memory tag/search helper.

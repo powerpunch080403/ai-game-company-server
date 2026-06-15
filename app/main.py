@@ -14,6 +14,8 @@ from app.git_workspace import GitWorkspaceError
 from app.owner_runner import build_owner_prompt, run_owner_command
 from app.repository import Repository
 from app.schemas import (
+    ApprovalCreate,
+    ApprovalDecision,
     ArtifactCreate,
     EpicCreate,
     MachineHeartbeat,
@@ -569,6 +571,42 @@ def download_artifact_content(
     if not path.is_file():
         raise HTTPException(status_code=404, detail="artifact file not found")
     return FileResponse(path, media_type=artifact.get("content_type") or None, filename=artifact.get("filename") or None)
+
+
+@app.post("/approvals")
+def create_approval(payload: ApprovalCreate, repo: Repository = Depends(get_repo)) -> dict:
+    try:
+        return repo.create_approval(payload)
+    except KeyError as exc:
+        raise not_found(exc) from exc
+
+
+@app.get("/approvals")
+def list_approvals(
+    status: str | None = Query(default=None),
+    project_id: int | None = Query(default=None),
+    target_type: str | None = Query(default=None),
+    repo: Repository = Depends(get_repo),
+) -> list[dict]:
+    return repo.list_approvals(status=status, project_id=project_id, target_type=target_type)
+
+
+@app.get("/approvals/{approval_id}")
+def get_approval(approval_id: str, repo: Repository = Depends(get_repo)) -> dict:
+    try:
+        return repo.get_approval(approval_id)
+    except KeyError as exc:
+        raise not_found(exc) from exc
+
+
+@app.post("/approvals/{approval_id}/decision")
+def decide_approval(approval_id: str, payload: ApprovalDecision, repo: Repository = Depends(get_repo)) -> dict:
+    try:
+        return repo.decide_approval(approval_id, payload)
+    except KeyError as exc:
+        raise not_found(exc) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
 
 
 @app.get("/owner/task-history")
