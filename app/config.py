@@ -26,6 +26,9 @@ class Settings:
     owner_runs_dir: Path
     artifact_root: Path
     max_artifact_upload_bytes: int
+    context_compact_threshold_tokens: int
+    context_warning_tokens: int
+    context_chars_per_token: float
 
 
 def load_settings() -> Settings:
@@ -45,4 +48,7 @@ def load_settings() -> Settings:
         owner_runs_dir=Path(os.getenv("GAME_COMPANY_OWNER_RUNS_DIR", "./owner-runs")),
         artifact_root=Path(os.getenv("GAME_COMPANY_ARTIFACT_ROOT", "./artifacts")),
         max_artifact_upload_bytes=int(os.getenv("GAME_COMPANY_MAX_ARTIFACT_UPLOAD_BYTES", "104857600")),
+        context_compact_threshold_tokens=int(os.getenv("GAME_COMPANY_CONTEXT_COMPACT_THRESHOLD_TOKENS", "260000")),
+        context_warning_tokens=int(os.getenv("GAME_COMPANY_CONTEXT_WARNING_TOKENS", "220000")),
+        context_chars_per_token=float(os.getenv("GAME_COMPANY_CONTEXT_CHARS_PER_TOKEN", "3.5")),
     )

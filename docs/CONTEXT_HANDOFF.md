@@ -322,11 +322,17 @@ Implemented after the baseline design:
 - Context compaction:
   - `docs/CONTEXT_COMPACTION.md` describes the Codex-style rolling summary
     design for Owner/Discord conversations.
+  - `POST /discord/mappings/{mapping_id}/context-status` estimates prompt
+    tokens for mapped Discord/Owner context. Defaults: warning at 220k,
+    compact required at 260k.
   - `POST /discord/mappings/{mapping_id}/compact` stores current
     `thread_summary` memory, archives the previous current summary, can archive
     the old mapping, and can create a continuation thread mapping.
-  - This is the server-side contract only; real Discord message fetching and
-    automatic LLM summarization are still later work.
+  - `context-status` can call compaction when `auto_compact=true` and a
+    `compact_summary` is provided.
+  - This is the server-side contract only; real Discord message fetching,
+    direct Codex CLI context inspection, and automatic LLM summarization are
+    still later work.
 
 These contracts deliberately do not choose the first real game engine and do not
 make merge warnings blocking. Ask the user before making either decision.

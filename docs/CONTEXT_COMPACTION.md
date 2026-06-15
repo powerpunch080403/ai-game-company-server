@@ -18,17 +18,20 @@ Implemented:
 
 - `thread_summary` memory type.
 - `POST /discord/mappings/{mapping_id}/compact`.
+- `POST /discord/mappings/{mapping_id}/context-status`.
 - Current summary storage through the mapping `summary_memory_key`.
 - Previous current summary archive before replacement.
 - Optional old mapping archive.
 - Optional continuation Discord thread mapping.
+- Context token estimate with default `260000` compact threshold.
+- Optional auto-compaction when a compact summary is provided.
 
 Not implemented yet:
 
 - Real Discord Gateway message ingestion.
 - Automatic raw Discord message fetching.
 - LLM summarization of the raw messages.
-- Automatic trigger based on token or message count.
+- Direct inspection of Codex CLI internal context window.
 
 ## Runtime Flow
 
@@ -43,6 +46,68 @@ Not implemented yet:
    and only a small recent-message window.
 
 ## API
+
+Check whether a mapped conversation is close to the configured context limit:
+
+```text
+POST /discord/mappings/{mapping_id}/context-status
+```
+
+Default thresholds:
+
+```text
+warning: 220000 estimated tokens
+compact: 260000 estimated tokens
+```
+
+Environment overrides:
+
+```env
+GAME_COMPANY_CONTEXT_COMPACT_THRESHOLD_TOKENS=260000
+GAME_COMPANY_CONTEXT_WARNING_TOKENS=220000
+GAME_COMPANY_CONTEXT_CHARS_PER_TOKEN=3.5
+```
+
+The v1 estimate uses `characters / GAME_COMPANY_CONTEXT_CHARS_PER_TOKEN`, plus
+any explicit `estimated_extra_tokens`. It is a conservative signal for when the
+Owner/Discord prompt should be compacted; it is not a direct Codex CLI internal
+token meter.
+
+Example request:
+
+```json
+{
+  "current_summary": "Current thread summary.",
+  "project_memory": ["Important project rules."],
+  "recent_messages": ["Owner: continue this task.", "Owner: what changed?"],
+  "task_context": ["Task report summary."],
+  "estimated_extra_tokens": 2000
+}
+```
+
+If the estimate is above the compact threshold, the response includes:
+
+```json
+{
+  "status": "compact_now",
+  "compact_required": true,
+  "compact_action": "summary_required"
+}
+```
+
+If a compact summary is already available, the same endpoint can store it:
+
+```json
+{
+  "recent_messages": ["..."],
+  "auto_compact": true,
+  "compact_summary": "Compact summary to carry forward.",
+  "archive_mapping": true,
+  "continuation_discord_thread_id": "thread-owner-tasks-part-2"
+}
+```
+
+Store a compact summary directly:
 
 ```text
 POST /discord/mappings/{mapping_id}/compact

@@ -491,6 +491,18 @@ curl "http://localhost:8080/discord/mappings?project_id=1&active=true" \
 Codex-style context compaction is available through:
 
 ```bash
+curl -X POST http://localhost:8080/discord/mappings/discord_mapping_id/context-status \
+  -H "Authorization: Bearer your-token" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "recent_messages":["Owner and AI conversation text..."],
+    "estimated_extra_tokens":2000
+  }'
+```
+
+The default compact threshold is `260000` estimated tokens.
+
+```bash
 curl -X POST http://localhost:8080/discord/mappings/discord_mapping_id/compact \
   -H "Authorization: Bearer your-token" \
   -H "Content-Type: application/json" \

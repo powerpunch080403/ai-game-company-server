@@ -45,6 +45,9 @@ def client(tmp_path: Path) -> Iterator[TestClient]:
             owner_runs_dir=Path("./owner-runs-test"),
             artifact_root=tmp_path / "artifacts",
             max_artifact_upload_bytes=1024,
+            context_compact_threshold_tokens=260000,
+            context_warning_tokens=220000,
+            context_chars_per_token=3.5,
         )
 
     app.dependency_overrides[get_repo] = repo_override
@@ -451,6 +454,9 @@ def test_api_token_required_when_configured(client: TestClient) -> None:
         owner_runs_dir=Path("./owner-runs-test"),
         artifact_root=Path("./artifacts-test"),
         max_artifact_upload_bytes=1024,
+        context_compact_threshold_tokens=260000,
+        context_warning_tokens=220000,
+        context_chars_per_token=3.5,
     )
     try:
         assert client.get("/health").status_code == 200
@@ -1027,6 +1033,62 @@ def test_discord_thread_compaction_stores_summary_and_continuation(client: TestC
     )
     assert summaries.status_code == 200
     assert summaries.json()[0]["key"] == second_body["memory"]["key"]
+
+
+def test_discord_context_status_requires_or_runs_compaction(client: TestClient) -> None:
+    mapping = client.post(
+        "/discord/mappings",
+        json={
+            "discord_guild_id": "guild-1",
+            "discord_channel_id": "channel-1",
+            "discord_thread_id": "thread-context-status",
+            "conversation_kind": "project",
+            "thread_role": "owner-design",
+            "created_by": "owner",
+        },
+    ).json()
+
+    ok = client.post(
+        f"/discord/mappings/{mapping['mapping_id']}/context-status",
+        json={
+            "recent_messages": ["short message"],
+            "threshold_tokens": 100,
+            "warning_tokens": 80,
+        },
+    )
+    assert ok.status_code == 200
+    assert ok.json()["status"] == "ok"
+    assert ok.json()["compact_action"] == "not_needed"
+
+    required = client.post(
+        f"/discord/mappings/{mapping['mapping_id']}/context-status",
+        json={
+            "recent_messages": ["x" * 400],
+            "threshold_tokens": 100,
+            "warning_tokens": 80,
+        },
+    )
+    assert required.status_code == 200
+    assert required.json()["status"] == "compact_now"
+    assert required.json()["compact_required"] is True
+    assert required.json()["compact_action"] == "summary_required"
+
+    compacted = client.post(
+        f"/discord/mappings/{mapping['mapping_id']}/context-status",
+        json={
+            "recent_messages": ["x" * 400],
+            "threshold_tokens": 100,
+            "warning_tokens": 80,
+            "auto_compact": True,
+            "compact_summary": "Summarized before crossing the configured context threshold.",
+            "archive_mapping": False,
+        },
+    )
+    assert compacted.status_code == 200
+    body = compacted.json()
+    assert body["compact_action"] == "compacted"
+    assert body["compact_result"]["memory"]["type"] == "thread_summary"
+    assert body["compact_result"]["memory"]["body"].startswith("Summarized before crossing")
 
 
 def test_owner_run_dry_run_records_prompt(client: TestClient) -> None:

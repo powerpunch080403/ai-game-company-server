@@ -260,3 +260,22 @@ class DiscordThreadCompactRequest(BaseModel):
     continuation_discord_thread_id: str | None = None
     continuation_notes: str = ""
     created_by: str = "context_compaction"
+
+
+class DiscordContextStatusRequest(BaseModel):
+    system_rules: str = ""
+    current_summary: str = ""
+    project_memory: list[str] = Field(default_factory=list)
+    recent_messages: list[str] = Field(default_factory=list)
+    task_context: list[str] = Field(default_factory=list)
+    artifact_context: list[str] = Field(default_factory=list)
+    next_user_message: str = ""
+    estimated_extra_tokens: int = Field(default=0, ge=0)
+    threshold_tokens: int | None = Field(default=None, ge=1)
+    warning_tokens: int | None = Field(default=None, ge=1)
+    auto_compact: bool = False
+    compact_summary: str = ""
+    archive_mapping: bool = False
+    archive_reason: str = "Thread compacted after context threshold."
+    continuation_discord_thread_id: str | None = None
+    continuation_notes: str = ""
