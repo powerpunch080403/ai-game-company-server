@@ -306,8 +306,12 @@ Implemented after the baseline design:
     setup/build/test/run phases, writes phase logs, and creates
     `test-runner-report.json`.
   - `scripts/run_test_runner.*` exposes the local runner from CLI.
-  - It does not yet lease tasks or submit reports; combine it with workspace
-    preparation and `app.test_runner_report` in the next worker-loop step.
+- Test Runner worker loop:
+  - `app.test_runner_worker` leases or claims `test_runner` tasks, prepares the
+    Git workspace branch, runs `app.test_runner`, maps reports through
+    `app.test_runner_report`, and submits worker reports unless `--no-report`
+    is used.
+  - `scripts/run_test_runner_worker.*` exposes the loop from CLI.
 
 These contracts deliberately do not choose the first real game engine and do not
 make merge warnings blocking. Ask the user before making either decision.

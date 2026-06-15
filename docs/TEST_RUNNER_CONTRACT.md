@@ -139,9 +139,23 @@ This wrapper:
 - Writes phase logs and `test-runner-report.json`.
 - Returns exit code 0 only when the local report status is `success`.
 
-It does not yet lease tasks or submit reports by itself. The next integration
-step is to combine workspace preparation, `app.test_runner`, and
-`app.test_runner_report` into a full test runner worker loop.
+The full worker loop is also implemented:
+
+```bash
+python -m app.test_runner_worker --worker-id test-runner-1
+```
+
+Wrapper scripts:
+
+```text
+scripts/run_test_runner_worker.sh
+scripts/run_test_runner_worker.ps1
+```
+
+The worker loop leases or claims a `test_runner` task, prepares the configured
+Git workspace branch, runs `app.test_runner`, maps the local report through
+`app.test_runner_report`, and submits the resulting worker report unless
+`--no-report` is passed.
 
 ## Artifact Layout
 
@@ -360,8 +374,8 @@ blocking.
 3. `scripts/run_test_runner.*` wrapper and `app.test_runner` phase execution
    are implemented.
 4. Report mapping helper and local unit tests are implemented.
-5. Add a full worker loop that leases `test_runner` tasks, prepares workspace,
-   runs phases, maps reports, and submits to the server.
+5. Full worker loop for leasing, workspace preparation, phase execution, report
+   mapping, and server submission is implemented.
 6. Add Unity-specific defaults only after the first real Unity project is
    selected.
 

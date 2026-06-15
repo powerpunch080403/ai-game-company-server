@@ -519,6 +519,23 @@ Test Runner는 프로젝트 workspace의 `.game-company/test_runner.json`을 읽
 `setup/build/test/run` 명령을 순서대로 실행해 `.game-company/artifacts/...` 아래에
 `test-runner-report.json`과 phase log를 남길 수 있습니다.
 
+서버에서 `test_runner` task를 lease하고, Git workspace를 준비하고, phase 실행 후
+서버 report까지 보내는 전체 loop:
+
+```bash
+./scripts/run_test_runner_worker.sh --worker-id test-runner-1
+```
+
+특정 task를 수동으로 실행:
+
+```bash
+./scripts/run_test_runner_worker.sh \
+  --task-id 12 \
+  --repo-url /path/to/project.git \
+  --workspace /path/to/game-workspace \
+  --report
+```
+
 ```bash
 ./scripts/run_test_runner.sh \
   --package runs/workspace-task-12/task_package.json \
