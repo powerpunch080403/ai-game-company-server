@@ -8,7 +8,7 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
-from app import main as main_module
+from app.api import auth as auth_module
 from app.config import Settings
 from app.db import SCHEMA
 from app.git_workspace import git_executable, prepare_branch, run_git
@@ -434,8 +434,8 @@ def test_workspace_lease_requires_project_repo_config(client: TestClient) -> Non
 
 
 def test_api_token_required_when_configured(client: TestClient) -> None:
-    original_settings = main_module.settings
-    main_module.settings = Settings(
+    original_settings = auth_module.settings
+    auth_module.settings = Settings(
         db_path=Path(":memory:"),
         host="127.0.0.1",
         port=8080,
@@ -538,7 +538,7 @@ def test_api_token_required_when_configured(client: TestClient) -> None:
         artifact_blocked = client.get("/tasks", headers={"Authorization": "Bearer artifact-token"})
         assert artifact_blocked.status_code == 403
     finally:
-        main_module.settings = original_settings
+        auth_module.settings = original_settings
 
 
 def test_owner_model_profiles_can_be_upserted_and_listed(client: TestClient) -> None:

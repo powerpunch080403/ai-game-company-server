@@ -411,6 +411,8 @@ Do in v1:
 - Keep SQLite.
 - Keep project repos separate from the server repo.
 - Add core registries and artifact APIs.
+- Keep FastAPI routes organized under `app/api/routes` so Discord, artifact,
+  worker, and Owner features can grow independently.
 - Prepare Discord bot integration.
 - Add test runner wrapper/report mapping.
 - Add project scaffold/template tooling.

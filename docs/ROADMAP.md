@@ -21,6 +21,7 @@ The server can already run the core loop:
 13. Protect APIs with role-scoped Owner, Worker, Readonly, and Artifact tokens.
 14. Block dangerous worker shell command patterns and support command allowlists.
 15. Limit artifact upload size with a configurable server setting.
+16. Split FastAPI endpoints into route modules under `app/api/routes`.
 
 ## Next Work While Main Computer Is Unavailable
 
@@ -72,7 +73,7 @@ Most of this is already implemented.
    - Worker command denylist and optional allowlist are implemented.
    - Artifact upload size limit is implemented.
    - Next: add true streaming upload for large artifacts.
-   - Next: split server routes before `app/main.py` grows further.
+   - FastAPI route modules are split out of `app/main.py`.
 
 3. Test Runner Contract
    - Baseline contract documented in `docs/TEST_RUNNER_CONTRACT.md`.
@@ -130,7 +131,7 @@ These do not require the main computer:
 - Rewrite the corrupted README in clean UTF-8 Korean.
 - Add template scaffold script and tests.
 - Add artifact streaming upload design/tests.
-- Split `app/main.py` into route modules.
+- Add Discord bot skeleton against the stored mapping APIs.
 - Add test runner report mapping helpers and tests.
 - Add API examples for the project planning flow.
 - Turn `docs/SERVER_CONFIGURATION.md` into systemd unit files when always-on

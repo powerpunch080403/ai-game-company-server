@@ -279,6 +279,14 @@ Implemented after the baseline design:
   - Uploads above the configured limit return HTTP 413.
   - Uploads still use a simple request-body read in v1; true streaming upload is
     a later hardening task.
+- API module split:
+  - `app/main.py` now only assembles the FastAPI app and includes routers.
+  - `app/api/deps.py` owns settings, DB initialization, and Repository
+    dependencies.
+  - `app/api/auth.py` owns role-scoped token middleware.
+  - `app/api/routes/*` owns feature endpoints.
+  - `app/services/reviews.py` and `app/services/artifact_files.py` hold shared
+    helper logic that used to live in `main.py`.
 
 These contracts deliberately do not choose the first real game engine and do not
 make merge warnings blocking. Ask the user before making either decision.
