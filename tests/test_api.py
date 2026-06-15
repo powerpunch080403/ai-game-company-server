@@ -18,7 +18,7 @@ from app.workspace_worker import commit_changes, push_branch
 
 
 @pytest.fixture()
-def client() -> Iterator[TestClient]:
+def client(tmp_path: Path) -> Iterator[TestClient]:
     db_path = Path(":memory:")
     conn = sqlite3.connect(":memory:", check_same_thread=False)
     conn.row_factory = sqlite3.Row
@@ -39,6 +39,7 @@ def client() -> Iterator[TestClient]:
             owner_command="",
             owner_timeout_seconds=900,
             owner_runs_dir=Path("./owner-runs-test"),
+            artifact_root=tmp_path / "artifacts",
         )
 
     app.dependency_overrides[get_repo] = repo_override
@@ -439,6 +440,7 @@ def test_api_token_required_when_configured(client: TestClient) -> None:
         owner_command="",
         owner_timeout_seconds=900,
         owner_runs_dir=Path("./owner-runs-test"),
+        artifact_root=Path("./artifacts-test"),
     )
     try:
         assert client.get("/health").status_code == 200
@@ -502,6 +504,194 @@ def test_owner_model_profiles_can_be_upserted_and_listed(client: TestClient) -> 
     assert readiness.json()["model_profiles"] == ["code_worker", "owner"]
 
 
+def test_machine_and_worker_registry(client: TestClient) -> None:
+    main_machine = {
+        "machine_id": "main_server",
+        "display_name": "Main server",
+        "kind": "main_server",
+        "host_hint": "powerpunch@100.92.73.19",
+        "os": "linux",
+        "workspace_root": "/home/powerpunch",
+        "artifact_root": "/home/powerpunch/ai-game-company-server/artifacts",
+        "status": "offline",
+        "capabilities": ["control_plane", "gpu", "local_llm_future"],
+        "notes": "Intel Core i5-14600KF / RTX 4070 / 32 GB DDR5.",
+    }
+    created_machine = client.put("/registry/machines/main_server", json=main_machine)
+    assert created_machine.status_code == 200
+    assert created_machine.json()["capabilities"] == ["control_plane", "gpu", "local_llm_future"]
+    assert created_machine.json()["last_seen_at"] is None
+
+    heartbeat = client.post(
+        "/registry/machines/main_server/heartbeat",
+        json={"status": "online", "capabilities": ["control_plane", "gpu"], "notes": "Booted."},
+    )
+    assert heartbeat.status_code == 200
+    assert heartbeat.json()["status"] == "online"
+    assert heartbeat.json()["last_seen_at"] is not None
+
+    listed_machines = client.get("/registry/machines", params={"kind": "main_server", "status": "online"})
+    assert listed_machines.status_code == 200
+    assert [machine["machine_id"] for machine in listed_machines.json()] == ["main_server"]
+
+    worker = {
+        "worker_id": "workspace-code-1",
+        "display_name": "Workspace Code Worker 1",
+        "role": "workspace_worker",
+        "machine_id": "main_server",
+        "status": "offline",
+        "capabilities": ["code_edit", "git_commit", "git_push"],
+        "assigned_projects": [1, 2],
+        "workspace_root": "/home/powerpunch/game-workspaces",
+        "trust_level": "trusted",
+        "notes": "v1 manual worker.",
+    }
+    created_worker = client.put("/registry/workers/workspace-code-1", json=worker)
+    assert created_worker.status_code == 200
+    assert created_worker.json()["assigned_projects"] == [1, 2]
+
+    worker_heartbeat = client.post(
+        "/registry/workers/workspace-code-1/heartbeat",
+        json={"status": "online", "capabilities": ["code_edit"], "notes": "Ready."},
+    )
+    assert worker_heartbeat.status_code == 200
+    assert worker_heartbeat.json()["status"] == "online"
+    assert worker_heartbeat.json()["capabilities"] == ["code_edit"]
+
+    listed_workers = client.get("/registry/workers", params={"machine_id": "main_server", "status": "online"})
+    assert listed_workers.status_code == 200
+    assert [item["worker_id"] for item in listed_workers.json()] == ["workspace-code-1"]
+
+    mismatch = client.put("/registry/workers/other-worker", json=worker)
+    assert mismatch.status_code == 400
+
+
+def test_worker_registry_last_seen_updates_from_task_activity(client: TestClient) -> None:
+    task = client.post(
+        "/tasks",
+        json={
+            "role": "code_worker",
+            "goal": "Touch worker registry",
+            "requirements": ["Lease updates registry"],
+            "success_criteria": ["Worker last_seen_at is set"],
+            "estimated_minutes": 15,
+            "memory_refs": [],
+            "branch": "worker/touch-worker-registry",
+        },
+    ).json()
+
+    leased = client.post("/workers/code-activity-1/lease", json={"role": "code_worker", "lease_minutes": 30})
+    assert leased.status_code == 200
+    assert leased.json()["id"] == task["id"]
+
+    busy_worker = client.get("/registry/workers/code-activity-1")
+    assert busy_worker.status_code == 200
+    assert busy_worker.json()["role"] == "code_worker"
+    assert busy_worker.json()["status"] == "busy"
+    assert busy_worker.json()["last_seen_at"] is not None
+
+    report = {
+        "status": "success",
+        "estimated_minutes": 15,
+        "actual_minutes": 1,
+        "productive_minutes": 1,
+        "error_minutes": 0,
+        "retry_count": 0,
+        "files_changed": [],
+        "tests": ["registry smoke"],
+        "summary": "Registry touched.",
+        "issues": "",
+    }
+    completed = client.post(f"/workers/code-activity-1/tasks/{task['id']}/report", json=report)
+    assert completed.status_code == 200
+
+    online_worker = client.get("/registry/workers/code-activity-1")
+    assert online_worker.status_code == 200
+    assert online_worker.json()["status"] == "online"
+
+
+def test_artifact_metadata_upload_and_download(client: TestClient) -> None:
+    project = client.post(
+        "/projects",
+        json={
+            "name": "Artifact Project",
+            "description": "",
+            "engine": "undecided",
+            "repo_url": "https://example.test/artifact.git",
+            "workspace_path": "/tmp/artifact-workspace",
+            "base_branch": "main",
+        },
+    ).json()
+    task = client.post(
+        "/tasks",
+        json={
+            "role": "test_runner",
+            "goal": "Capture screenshot",
+            "requirements": ["Upload screenshot"],
+            "success_criteria": ["Artifact is downloadable"],
+            "estimated_minutes": 15,
+            "memory_refs": [],
+            "branch": "worker/capture-screenshot",
+        },
+    ).json()
+    machine = {
+        "machine_id": "test_runner_12400_3060",
+        "display_name": "Test Runner",
+        "kind": "test_runner_machine",
+        "host_hint": "",
+        "os": "linux",
+        "workspace_root": "/srv/projects",
+        "artifact_root": "/srv/artifacts",
+        "status": "online",
+        "capabilities": ["build", "test", "screenshot", "gpu"],
+        "notes": "i5-12400 / RTX 3060.",
+    }
+    assert client.put("/registry/machines/test_runner_12400_3060", json=machine).status_code == 200
+
+    artifact_payload = {
+        "artifact_id": "shot-001",
+        "project_id": project["id"],
+        "task_id": task["id"],
+        "worker_id": "test-runner-1",
+        "machine_id": "test_runner_12400_3060",
+        "artifact_type": "screenshot",
+        "filename": "screen.png",
+        "content_type": "image/png",
+        "summary": "First visual check.",
+        "tags": ["visual", "smoke"],
+        "retention_policy": "important_keep_forever",
+        "important": True,
+        "release_or_milestone": False,
+    }
+    created = client.post("/artifacts", json=artifact_payload)
+    assert created.status_code == 200
+    assert created.json()["artifact_id"] == "shot-001"
+    assert created.json()["important"] is True
+    assert created.json()["tags"] == ["visual", "smoke"]
+    assert created.json()["path"] == ""
+
+    uploaded = client.put(
+        "/artifacts/shot-001/content",
+        params={"filename": "../screen.png", "content_type": "image/png"},
+        content=b"fake png bytes",
+    )
+    assert uploaded.status_code == 200
+    assert uploaded.json()["filename"] == "screen.png"
+    assert uploaded.json()["size_bytes"] == len(b"fake png bytes")
+    assert uploaded.json()["path"].endswith("/shot-001/screen.png")
+
+    listed = client.get(
+        "/artifacts",
+        params={"project_id": project["id"], "artifact_type": "screenshot", "important": True},
+    )
+    assert listed.status_code == 200
+    assert [item["artifact_id"] for item in listed.json()] == ["shot-001"]
+
+    downloaded = client.get("/artifacts/shot-001/content")
+    assert downloaded.status_code == 200
+    assert downloaded.content == b"fake png bytes"
+
+
 def test_owner_run_dry_run_records_prompt(client: TestClient) -> None:
     response = client.post(
         "/owner/runs",
@@ -516,6 +706,10 @@ def test_owner_run_dry_run_records_prompt(client: TestClient) -> None:
     assert body["status"] == "dry_run"
     assert "Break combat system" in body["prompt"]
     assert "No game engine selected yet." in body["prompt"]
+    assert "Return exactly these sections" in body["prompt"]
+    assert "user_questions" in body["prompt"]
+    assert "workspace task branches must start with worker/" in body["prompt"]
+    assert "project engine may stay undecided" in body["prompt"]
 
     runs = client.get("/owner/runs")
     assert runs.status_code == 200

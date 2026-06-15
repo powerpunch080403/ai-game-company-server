@@ -125,3 +125,63 @@ class ModelProfileUpsert(BaseModel):
     max_tokens: int | None = Field(default=None, ge=1)
     enabled: bool = True
     notes: str = ""
+
+
+class MachineUpsert(BaseModel):
+    machine_id: str = Field(min_length=1)
+    display_name: str = ""
+    kind: str = ""
+    host_hint: str = ""
+    os: str = ""
+    workspace_root: str = ""
+    artifact_root: str = ""
+    status: str = "offline"
+    capabilities: list[str] = Field(default_factory=list)
+    notes: str = ""
+
+
+class MachineHeartbeat(BaseModel):
+    status: str = "online"
+    capabilities: list[str] | None = None
+    notes: str | None = None
+
+
+class WorkerUpsert(BaseModel):
+    worker_id: str = Field(min_length=1)
+    display_name: str = ""
+    role: str = ""
+    machine_id: str | None = None
+    status: str = "offline"
+    capabilities: list[str] = Field(default_factory=list)
+    assigned_projects: list[int] = Field(default_factory=list)
+    workspace_root: str = ""
+    trust_level: str = "limited"
+    notes: str = ""
+
+
+class WorkerHeartbeat(BaseModel):
+    status: str = "online"
+    role: str | None = None
+    machine_id: str | None = None
+    capabilities: list[str] | None = None
+    workspace_root: str | None = None
+    notes: str | None = None
+
+
+class ArtifactCreate(BaseModel):
+    artifact_id: str | None = None
+    project_id: int
+    task_id: int | None = None
+    worker_id: str | None = None
+    machine_id: str | None = None
+    artifact_type: str = Field(min_length=1)
+    filename: str = ""
+    content_type: str = ""
+    thumbnail_path: str = ""
+    summary: str = ""
+    tags: list[str] = Field(default_factory=list)
+    retention_policy: str = "standard_30_days"
+    important: bool = False
+    release_or_milestone: bool = False
+    discord_message_id: str | None = None
+    discord_thread_id: str | None = None

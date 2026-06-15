@@ -20,6 +20,7 @@ class Settings:
     owner_command: str
     owner_timeout_seconds: int
     owner_runs_dir: Path
+    artifact_root: Path
 
 
 def load_settings() -> Settings:
@@ -33,4 +34,5 @@ def load_settings() -> Settings:
         owner_command=os.getenv("GAME_COMPANY_OWNER_COMMAND", ""),
         owner_timeout_seconds=int(os.getenv("GAME_COMPANY_OWNER_TIMEOUT_SECONDS", "900")),
         owner_runs_dir=Path(os.getenv("GAME_COMPANY_OWNER_RUNS_DIR", "./owner-runs")),
+        artifact_root=Path(os.getenv("GAME_COMPANY_ARTIFACT_ROOT", "./artifacts")),
     )

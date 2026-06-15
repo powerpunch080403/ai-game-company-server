@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import Any
 
 from fastapi import Depends, FastAPI, HTTPException, Query, Request
-from fastapi.responses import JSONResponse
+from fastapi.responses import FileResponse, JSONResponse
 
 from app.config import Settings, load_settings
 from app.db import connect, init_db
@@ -14,7 +14,10 @@ from app.git_workspace import GitWorkspaceError
 from app.owner_runner import build_owner_prompt, run_owner_command
 from app.repository import Repository
 from app.schemas import (
+    ArtifactCreate,
     EpicCreate,
+    MachineHeartbeat,
+    MachineUpsert,
     MemoryCreate,
     ModelProfileUpsert,
     OwnerRunCreate,
@@ -28,6 +31,8 @@ from app.schemas import (
     SubEpicCreate,
     TaskCreate,
     WorkerLeaseRequest,
+    WorkerHeartbeat,
+    WorkerUpsert,
     WorkerReportCreate,
     WorkerTaskClaimRequest,
 )
@@ -159,6 +164,16 @@ def build_task_queue_review(package: dict[str, Any]) -> dict[str, Any]:
         "project_id": project["id"] if project else None,
         "project_name": project["name"] if project else None,
     }
+
+
+def safe_artifact_filename(filename: str) -> str:
+    cleaned = Path(filename).name.strip()
+    return cleaned or "artifact.bin"
+
+
+def artifact_relative_dir(artifact: dict[str, Any]) -> Path:
+    task_segment = f"task-{artifact['task_id']}" if artifact.get("task_id") is not None else "manual"
+    return Path(f"project-{artifact['project_id']}") / task_segment / artifact["artifact_id"]
 
 
 def build_owner_readiness(repo: Repository, owner_recall_minutes: int) -> dict[str, Any]:
@@ -414,6 +429,146 @@ def get_model_profile(role: str, repo: Repository = Depends(get_repo)) -> dict:
         return repo.get_model_profile(role)
     except KeyError as exc:
         raise not_found(exc) from exc
+
+
+@app.put("/registry/machines/{machine_id}")
+def upsert_machine(machine_id: str, payload: MachineUpsert, repo: Repository = Depends(get_repo)) -> dict:
+    if payload.machine_id != machine_id:
+        raise HTTPException(status_code=400, detail="machine_id must match path machine_id")
+    return repo.upsert_machine(payload)
+
+
+@app.get("/registry/machines")
+def list_machines(
+    kind: str | None = Query(default=None),
+    status: str | None = Query(default=None),
+    repo: Repository = Depends(get_repo),
+) -> list[dict]:
+    return repo.list_machines(kind=kind, status=status)
+
+
+@app.get("/registry/machines/{machine_id}")
+def get_machine(machine_id: str, repo: Repository = Depends(get_repo)) -> dict:
+    try:
+        return repo.get_machine(machine_id)
+    except KeyError as exc:
+        raise not_found(exc) from exc
+
+
+@app.post("/registry/machines/{machine_id}/heartbeat")
+def heartbeat_machine(machine_id: str, payload: MachineHeartbeat, repo: Repository = Depends(get_repo)) -> dict:
+    try:
+        return repo.heartbeat_machine(machine_id, payload)
+    except KeyError as exc:
+        raise not_found(exc) from exc
+
+
+@app.put("/registry/workers/{worker_id}")
+def upsert_worker(worker_id: str, payload: WorkerUpsert, repo: Repository = Depends(get_repo)) -> dict:
+    if payload.worker_id != worker_id:
+        raise HTTPException(status_code=400, detail="worker_id must match path worker_id")
+    return repo.upsert_worker(payload)
+
+
+@app.get("/registry/workers")
+def list_workers(
+    role: str | None = Query(default=None),
+    status: str | None = Query(default=None),
+    machine_id: str | None = Query(default=None),
+    repo: Repository = Depends(get_repo),
+) -> list[dict]:
+    return repo.list_workers(role=role, status=status, machine_id=machine_id)
+
+
+@app.get("/registry/workers/{worker_id}")
+def get_worker(worker_id: str, repo: Repository = Depends(get_repo)) -> dict:
+    try:
+        return repo.get_worker(worker_id)
+    except KeyError as exc:
+        raise not_found(exc) from exc
+
+
+@app.post("/registry/workers/{worker_id}/heartbeat")
+def heartbeat_worker(worker_id: str, payload: WorkerHeartbeat, repo: Repository = Depends(get_repo)) -> dict:
+    return repo.heartbeat_worker(worker_id, payload)
+
+
+@app.post("/artifacts")
+def create_artifact(payload: ArtifactCreate, repo: Repository = Depends(get_repo)) -> dict:
+    try:
+        return repo.create_artifact(payload)
+    except KeyError as exc:
+        raise not_found(exc) from exc
+
+
+@app.get("/artifacts")
+def list_artifacts(
+    project_id: int | None = Query(default=None),
+    task_id: int | None = Query(default=None),
+    artifact_type: str | None = Query(default=None),
+    important: bool | None = Query(default=None),
+    repo: Repository = Depends(get_repo),
+) -> list[dict]:
+    return repo.list_artifacts(
+        project_id=project_id,
+        task_id=task_id,
+        artifact_type=artifact_type,
+        important=important,
+    )
+
+
+@app.get("/artifacts/{artifact_id}")
+def get_artifact(artifact_id: str, repo: Repository = Depends(get_repo)) -> dict:
+    try:
+        return repo.get_artifact(artifact_id)
+    except KeyError as exc:
+        raise not_found(exc) from exc
+
+
+@app.put("/artifacts/{artifact_id}/content")
+async def upload_artifact_content(
+    artifact_id: str,
+    request: Request,
+    filename: str = Query(default=""),
+    content_type: str = Query(default="application/octet-stream"),
+    repo: Repository = Depends(get_repo),
+    config: Settings = Depends(get_settings),
+) -> dict:
+    try:
+        artifact = repo.get_artifact(artifact_id)
+    except KeyError as exc:
+        raise not_found(exc) from exc
+    body = await request.body()
+    safe_name = safe_artifact_filename(filename or artifact.get("filename") or artifact_id)
+    relative_path = artifact_relative_dir(artifact) / safe_name
+    target_path = config.artifact_root / relative_path
+    target_path.parent.mkdir(parents=True, exist_ok=True)
+    target_path.write_bytes(body)
+    return repo.attach_artifact_file(
+        artifact_id,
+        relative_path.as_posix(),
+        safe_name,
+        content_type,
+        len(body),
+    )
+
+
+@app.get("/artifacts/{artifact_id}/content")
+def download_artifact_content(
+    artifact_id: str,
+    repo: Repository = Depends(get_repo),
+    config: Settings = Depends(get_settings),
+) -> FileResponse:
+    try:
+        artifact = repo.get_artifact(artifact_id)
+    except KeyError as exc:
+        raise not_found(exc) from exc
+    if not artifact.get("path"):
+        raise HTTPException(status_code=404, detail="artifact content not uploaded")
+    path = config.artifact_root / artifact["path"]
+    if not path.is_file():
+        raise HTTPException(status_code=404, detail="artifact file not found")
+    return FileResponse(path, media_type=artifact.get("content_type") or None, filename=artifact.get("filename") or None)
 
 
 @app.get("/owner/task-history")

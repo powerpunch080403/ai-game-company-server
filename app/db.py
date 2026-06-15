@@ -137,6 +137,69 @@ CREATE TABLE IF NOT EXISTS model_profiles (
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS machines (
+    machine_id TEXT PRIMARY KEY,
+    display_name TEXT NOT NULL DEFAULT '',
+    kind TEXT NOT NULL DEFAULT '',
+    host_hint TEXT NOT NULL DEFAULT '',
+    os TEXT NOT NULL DEFAULT '',
+    workspace_root TEXT NOT NULL DEFAULT '',
+    artifact_root TEXT NOT NULL DEFAULT '',
+    status TEXT NOT NULL DEFAULT 'offline',
+    capabilities_json TEXT NOT NULL DEFAULT '[]',
+    notes TEXT NOT NULL DEFAULT '',
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    last_seen_at TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_machines_kind_status ON machines(kind, status);
+
+CREATE TABLE IF NOT EXISTS workers (
+    worker_id TEXT PRIMARY KEY,
+    display_name TEXT NOT NULL DEFAULT '',
+    role TEXT NOT NULL DEFAULT '',
+    machine_id TEXT REFERENCES machines(machine_id) ON DELETE SET NULL,
+    status TEXT NOT NULL DEFAULT 'offline',
+    capabilities_json TEXT NOT NULL DEFAULT '[]',
+    assigned_projects_json TEXT NOT NULL DEFAULT '[]',
+    workspace_root TEXT NOT NULL DEFAULT '',
+    trust_level TEXT NOT NULL DEFAULT 'limited',
+    notes TEXT NOT NULL DEFAULT '',
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    last_seen_at TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_workers_role_status ON workers(role, status);
+CREATE INDEX IF NOT EXISTS idx_workers_machine_id ON workers(machine_id);
+
+CREATE TABLE IF NOT EXISTS artifacts (
+    artifact_id TEXT PRIMARY KEY,
+    project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    task_id INTEGER REFERENCES tasks(id) ON DELETE SET NULL,
+    worker_id TEXT,
+    machine_id TEXT REFERENCES machines(machine_id) ON DELETE SET NULL,
+    artifact_type TEXT NOT NULL,
+    filename TEXT NOT NULL DEFAULT '',
+    path TEXT NOT NULL DEFAULT '',
+    content_type TEXT NOT NULL DEFAULT '',
+    thumbnail_path TEXT NOT NULL DEFAULT '',
+    summary TEXT NOT NULL DEFAULT '',
+    tags_json TEXT NOT NULL DEFAULT '[]',
+    retention_policy TEXT NOT NULL DEFAULT 'standard_30_days',
+    important INTEGER NOT NULL DEFAULT 0,
+    release_or_milestone INTEGER NOT NULL DEFAULT 0,
+    size_bytes INTEGER,
+    discord_message_id TEXT,
+    discord_thread_id TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_artifacts_project_task ON artifacts(project_id, task_id);
+CREATE INDEX IF NOT EXISTS idx_artifacts_type ON artifacts(artifact_type);
 """
 
 PROJECT_COLUMNS = {

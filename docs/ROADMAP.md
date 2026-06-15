@@ -13,6 +13,9 @@ The server can already run the core loop:
 5. Review history.
 6. Merge successful worker branches.
 7. Retry, cancel, release, or assign tasks.
+8. Register machines and workers.
+9. Track worker/machine heartbeat and worker last-seen activity.
+10. Store artifact metadata and raw artifact files.
 
 ## Next Work While Main Computer Is Unavailable
 
@@ -23,6 +26,11 @@ Work that can be done locally:
 - Engine-agnostic project bootstrap design.
 - Test runner contract.
 - API response schemas and docs.
+- Server configuration design.
+- Architecture blueprint and document map.
+- Discord operator console design.
+- Long-term project memory design.
+- Visual tool and MCP integration design.
 - README rewrite in clean UTF-8 Korean.
 - Local unit tests.
 - CLI UX improvements.
@@ -37,6 +45,9 @@ Work that can be done locally:
 - Merge candidate review
 - Retry/cancel/release/assign tools
 - Model profile settings
+- Worker/Machine Registry
+- Machine/Worker heartbeat
+- Artifact metadata/upload/download API
 - Clear handoff docs
 - Remote deploy script
 
@@ -45,25 +56,31 @@ Most of this is already implemented.
 ## v1 Remaining High Priority
 
 1. Owner Task Planning
-   - Turn a user request into Project/Epic/Sub Epic/Task.
-   - Enforce 15-minute task sizing.
-   - Store design decisions as memory.
+   - Baseline contract documented in `docs/OWNER_TASK_PLANNING.md`.
+   - Owner prompt now follows the planning contract.
+   - Next: add optional local validation helper.
 
 2. Test Runner Contract
-   - Define build command.
-   - Define run command.
-   - Define artifact/log output.
-   - Define report format.
+   - Baseline contract documented in `docs/TEST_RUNNER_CONTRACT.md`.
+   - Next: add a local runner wrapper and report mapping tests.
 
 3. Game Project Template
    - Engine undecided.
    - Keep template minimal until actual game starts.
    - Support Unity later without locking the server to Unity.
+   - Baseline contract documented in `docs/GAME_PROJECT_TEMPLATE.md`.
+   - Next: add a scaffold script after the contract is reviewed.
 
 4. Documentation
+   - Architecture blueprint documented in `docs/ARCHITECTURE_BLUEPRINT.md`.
+   - Hardware/machine inventory documented in `docs/HARDWARE_ENVIRONMENT.md`.
    - Fix or replace corrupted README.
    - Add API operation examples.
    - Add remote recovery guide.
+   - Baseline server configuration documented in `docs/SERVER_CONFIGURATION.md`.
+   - Baseline Discord operator console documented in `docs/DISCORD_OPERATOR_CONSOLE.md`.
+   - Baseline long-term project memory documented in `docs/LONG_TERM_PROJECT_MEMORY.md`.
+   - Baseline visual/MCP tool integration documented in `docs/VISUAL_TOOL_INTEGRATION.md`.
 
 5. Owner Review Policy
    - Decide which warnings block merge.
@@ -91,3 +108,22 @@ These should be asked when implementation reaches them:
 - When to enable always-on systemd service.
 
 Until then, keep defaults conservative and continue implementation.
+
+## Local-Only Next Steps
+
+These do not require the main computer:
+
+- Rewrite the corrupted README in clean UTF-8 Korean.
+- Add template scaffold script and tests.
+- Add test runner report mapping helpers and tests.
+- Add API examples for the project planning flow.
+- Turn `docs/SERVER_CONFIGURATION.md` into systemd unit files when always-on
+  mode is approved.
+- Add Discord bot/operator console schema after the conversation model is
+  finalized.
+- Add long-term project change summary log design before implementing Discord
+  memory ingestion.
+- Add visual artifact and MCP tool operation schemas before connecting Blender
+  or game engine tools.
+- Add Approval/Decision and Discord mapping APIs before implementing the
+  Discord bot.

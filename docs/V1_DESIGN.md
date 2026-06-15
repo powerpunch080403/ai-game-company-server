@@ -11,6 +11,11 @@ This server coordinates an AI game development company:
 
 The first objective is a working automation loop, not a perfect platform.
 
+Longer-term direction: the same server should be able to coordinate non-game
+development projects such as apps, web services, tools, plugins, and automation.
+The v1 wording remains game-focused because that is the first target, but
+project metadata and memory should avoid hard-locking the system to games only.
+
 ## Core Philosophy
 
 Use expensive intelligence sparingly.
@@ -38,6 +43,13 @@ flowchart TD
     Merge --> GameRepo
 ```
 
+Runtime server placement and operations are defined in
+[SERVER_CONFIGURATION.md](SERVER_CONFIGURATION.md).
+
+For the future-AI handoff map, read
+[ARCHITECTURE_BLUEPRINT.md](ARCHITECTURE_BLUEPRINT.md) before changing runtime
+design, Discord operations, memory, artifacts, or worker placement.
+
 ## Data Model
 
 ### Project Hierarchy
@@ -58,6 +70,8 @@ Each task must include:
 - Memory Refs
 - Branch
 
+Detailed planning rules live in [OWNER_TASK_PLANNING.md](OWNER_TASK_PLANNING.md).
+
 ### Memory Types
 
 - design
@@ -67,6 +81,9 @@ Each task must include:
 - art_guide
 - narrative_guide
 - task_history
+
+Long-term project memory and change summary rules are defined in
+[LONG_TERM_PROJECT_MEMORY.md](LONG_TERM_PROJECT_MEMORY.md).
 
 ### Model Profiles
 
@@ -114,6 +131,53 @@ Owner responsibilities:
 - Learn from task history.
 
 Owner should not directly code except for small control-plane fixes.
+
+Owner task planning in v1 is contract-first:
+
+- Default worker task size is 15 minutes.
+- Workspace task branches must start with `worker/`.
+- Durable decisions are written as typed memory.
+- User approval is required for engine selection, paid services, credential
+  changes, destructive git operations, and merge-policy escalation.
+- Routine decomposition, local docs, local tests, branch naming, and placeholder
+  `undecided` engine values do not require user approval.
+
+See [OWNER_TASK_PLANNING.md](OWNER_TASK_PLANNING.md).
+
+## Test Runner Contract
+
+The `test_runner` role validates builds, tests, runtime smoke checks, and
+artifacts. It leases tasks through the same worker API and reports through the
+existing worker report schema.
+
+Project-local test configuration should live in:
+
+```text
+.game-company/test_runner.json
+```
+
+In v1, merge review still treats missing test evidence as a warning, not a hard
+block. Owner may create a separate `test_runner` task before merge when code
+worker evidence is weak.
+
+See [TEST_RUNNER_CONTRACT.md](TEST_RUNNER_CONTRACT.md).
+
+## Game Project Template
+
+Game repositories are separate from this server repository. The default
+template is engine-agnostic and minimal:
+
+```text
+.game-company/
+docs/
+src/
+tests/
+```
+
+The engine should remain `undecided` until the user chooses the first real game
+engine. Unity support is expected later, but the server must not require Unity.
+
+See [GAME_PROJECT_TEMPLATE.md](GAME_PROJECT_TEMPLATE.md).
 
 ## Merge Policy
 

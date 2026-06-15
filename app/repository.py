@@ -2,12 +2,16 @@ from __future__ import annotations
 
 import json
 import sqlite3
+import uuid
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from app.db import transaction
 from app.schemas import (
+    ArtifactCreate,
     EpicCreate,
+    MachineHeartbeat,
+    MachineUpsert,
     MemoryCreate,
     ModelProfileUpsert,
     OwnerRunCreate,
@@ -15,6 +19,8 @@ from app.schemas import (
     ProjectCreate,
     SubEpicCreate,
     TaskCreate,
+    WorkerHeartbeat,
+    WorkerUpsert,
     WorkerReportCreate,
 )
 
@@ -34,11 +40,16 @@ def row_to_dict(row: sqlite3.Row | None) -> dict[str, Any] | None:
         "memory_refs_json",
         "files_changed_json",
         "tests_json",
+        "capabilities_json",
+        "assigned_projects_json",
     ):
         if key in item:
             item[key.removesuffix("_json")] = json.loads(item.pop(key))
     if "enabled" in item:
         item["enabled"] = bool(item["enabled"])
+    for key in ("important", "release_or_milestone"):
+        if key in item:
+            item[key] = bool(item[key])
     return item
 
 
@@ -135,6 +146,303 @@ class Repository:
             params,
         ).fetchall()
         return [row_to_dict(row) or {} for row in rows]
+
+    def upsert_machine(self, payload: MachineUpsert) -> dict[str, Any]:
+        timestamp = now_iso()
+        self.conn.execute(
+            """
+            INSERT INTO machines (
+                machine_id, display_name, kind, host_hint, os, workspace_root,
+                artifact_root, status, capabilities_json, notes, created_at,
+                updated_at, last_seen_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)
+            ON CONFLICT(machine_id) DO UPDATE SET
+                display_name = excluded.display_name,
+                kind = excluded.kind,
+                host_hint = excluded.host_hint,
+                os = excluded.os,
+                workspace_root = excluded.workspace_root,
+                artifact_root = excluded.artifact_root,
+                status = excluded.status,
+                capabilities_json = excluded.capabilities_json,
+                notes = excluded.notes,
+                updated_at = excluded.updated_at
+            """,
+            (
+                payload.machine_id,
+                payload.display_name,
+                payload.kind,
+                payload.host_hint,
+                payload.os,
+                payload.workspace_root,
+                payload.artifact_root,
+                payload.status,
+                json.dumps(payload.capabilities),
+                payload.notes,
+                timestamp,
+                timestamp,
+            ),
+        )
+        self.conn.commit()
+        return self.get_machine(payload.machine_id)
+
+    def get_machine(self, machine_id: str) -> dict[str, Any]:
+        row = self.conn.execute("SELECT * FROM machines WHERE machine_id = ?", (machine_id,)).fetchone()
+        if row is None:
+            raise KeyError("machine not found")
+        return row_to_dict(row) or {}
+
+    def list_machines(self, kind: str | None = None, status: str | None = None) -> list[dict[str, Any]]:
+        clauses: list[str] = []
+        params: list[Any] = []
+        if kind:
+            clauses.append("kind = ?")
+            params.append(kind)
+        if status:
+            clauses.append("status = ?")
+            params.append(status)
+        where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
+        rows = self.conn.execute(
+            f"SELECT * FROM machines {where} ORDER BY machine_id ASC",
+            params,
+        ).fetchall()
+        return [row_to_dict(row) or {} for row in rows]
+
+    def heartbeat_machine(self, machine_id: str, payload: MachineHeartbeat) -> dict[str, Any]:
+        machine = self.get_machine(machine_id)
+        timestamp = now_iso()
+        capabilities = payload.capabilities if payload.capabilities is not None else machine["capabilities"]
+        notes = payload.notes if payload.notes is not None else machine["notes"]
+        self.conn.execute(
+            """
+            UPDATE machines
+            SET status = ?,
+                capabilities_json = ?,
+                notes = ?,
+                updated_at = ?,
+                last_seen_at = ?
+            WHERE machine_id = ?
+            """,
+            (
+                payload.status,
+                json.dumps(capabilities),
+                notes,
+                timestamp,
+                timestamp,
+                machine_id,
+            ),
+        )
+        self.conn.commit()
+        return self.get_machine(machine_id)
+
+    def upsert_worker(self, payload: WorkerUpsert) -> dict[str, Any]:
+        timestamp = now_iso()
+        self.conn.execute(
+            """
+            INSERT INTO workers (
+                worker_id, display_name, role, machine_id, status,
+                capabilities_json, assigned_projects_json, workspace_root,
+                trust_level, notes, created_at, updated_at, last_seen_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)
+            ON CONFLICT(worker_id) DO UPDATE SET
+                display_name = excluded.display_name,
+                role = excluded.role,
+                machine_id = excluded.machine_id,
+                status = excluded.status,
+                capabilities_json = excluded.capabilities_json,
+                assigned_projects_json = excluded.assigned_projects_json,
+                workspace_root = excluded.workspace_root,
+                trust_level = excluded.trust_level,
+                notes = excluded.notes,
+                updated_at = excluded.updated_at
+            """,
+            (
+                payload.worker_id,
+                payload.display_name,
+                payload.role,
+                payload.machine_id,
+                payload.status,
+                json.dumps(payload.capabilities),
+                json.dumps(payload.assigned_projects),
+                payload.workspace_root,
+                payload.trust_level,
+                payload.notes,
+                timestamp,
+                timestamp,
+            ),
+        )
+        self.conn.commit()
+        return self.get_worker(payload.worker_id)
+
+    def get_worker(self, worker_id: str) -> dict[str, Any]:
+        row = self.conn.execute("SELECT * FROM workers WHERE worker_id = ?", (worker_id,)).fetchone()
+        if row is None:
+            raise KeyError("worker not found")
+        return row_to_dict(row) or {}
+
+    def list_workers(
+        self,
+        role: str | None = None,
+        status: str | None = None,
+        machine_id: str | None = None,
+    ) -> list[dict[str, Any]]:
+        clauses: list[str] = []
+        params: list[Any] = []
+        if role:
+            clauses.append("role = ?")
+            params.append(role)
+        if status:
+            clauses.append("status = ?")
+            params.append(status)
+        if machine_id:
+            clauses.append("machine_id = ?")
+            params.append(machine_id)
+        where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
+        rows = self.conn.execute(
+            f"SELECT * FROM workers {where} ORDER BY worker_id ASC",
+            params,
+        ).fetchall()
+        return [row_to_dict(row) or {} for row in rows]
+
+    def heartbeat_worker(self, worker_id: str, payload: WorkerHeartbeat) -> dict[str, Any]:
+        worker = self._ensure_worker(worker_id, role=payload.role or "", machine_id=payload.machine_id)
+        timestamp = now_iso()
+        role = payload.role if payload.role is not None else worker["role"]
+        machine_id = payload.machine_id if payload.machine_id is not None else worker["machine_id"]
+        capabilities = payload.capabilities if payload.capabilities is not None else worker["capabilities"]
+        workspace_root = payload.workspace_root if payload.workspace_root is not None else worker["workspace_root"]
+        notes = payload.notes if payload.notes is not None else worker["notes"]
+        self.conn.execute(
+            """
+            UPDATE workers
+            SET role = ?,
+                machine_id = ?,
+                status = ?,
+                capabilities_json = ?,
+                workspace_root = ?,
+                notes = ?,
+                updated_at = ?,
+                last_seen_at = ?
+            WHERE worker_id = ?
+            """,
+            (
+                role,
+                machine_id,
+                payload.status,
+                json.dumps(capabilities),
+                workspace_root,
+                notes,
+                timestamp,
+                timestamp,
+                worker_id,
+            ),
+        )
+        self.conn.commit()
+        return self.get_worker(worker_id)
+
+    def create_artifact(self, payload: ArtifactCreate) -> dict[str, Any]:
+        self.get_project(payload.project_id)
+        if payload.task_id is not None:
+            self.get_task(payload.task_id)
+        if payload.machine_id is not None:
+            self.get_machine(payload.machine_id)
+        artifact_id = payload.artifact_id or str(uuid.uuid4())
+        timestamp = now_iso()
+        self.conn.execute(
+            """
+            INSERT INTO artifacts (
+                artifact_id, project_id, task_id, worker_id, machine_id,
+                artifact_type, filename, path, content_type, thumbnail_path,
+                summary, tags_json, retention_policy, important,
+                release_or_milestone, size_bytes, discord_message_id,
+                discord_thread_id, created_at, updated_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, '', ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?)
+            """,
+            (
+                artifact_id,
+                payload.project_id,
+                payload.task_id,
+                payload.worker_id,
+                payload.machine_id,
+                payload.artifact_type,
+                payload.filename,
+                payload.content_type,
+                payload.thumbnail_path,
+                payload.summary,
+                json.dumps(payload.tags),
+                payload.retention_policy,
+                1 if payload.important else 0,
+                1 if payload.release_or_milestone else 0,
+                payload.discord_message_id,
+                payload.discord_thread_id,
+                timestamp,
+                timestamp,
+            ),
+        )
+        self.conn.commit()
+        return self.get_artifact(artifact_id)
+
+    def get_artifact(self, artifact_id: str) -> dict[str, Any]:
+        row = self.conn.execute("SELECT * FROM artifacts WHERE artifact_id = ?", (artifact_id,)).fetchone()
+        if row is None:
+            raise KeyError("artifact not found")
+        return row_to_dict(row) or {}
+
+    def list_artifacts(
+        self,
+        project_id: int | None = None,
+        task_id: int | None = None,
+        artifact_type: str | None = None,
+        important: bool | None = None,
+    ) -> list[dict[str, Any]]:
+        clauses: list[str] = []
+        params: list[Any] = []
+        if project_id is not None:
+            clauses.append("project_id = ?")
+            params.append(project_id)
+        if task_id is not None:
+            clauses.append("task_id = ?")
+            params.append(task_id)
+        if artifact_type:
+            clauses.append("artifact_type = ?")
+            params.append(artifact_type)
+        if important is not None:
+            clauses.append("important = ?")
+            params.append(1 if important else 0)
+        where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
+        rows = self.conn.execute(
+            f"SELECT * FROM artifacts {where} ORDER BY created_at DESC, artifact_id ASC",
+            params,
+        ).fetchall()
+        return [row_to_dict(row) or {} for row in rows]
+
+    def attach_artifact_file(
+        self,
+        artifact_id: str,
+        relative_path: str,
+        filename: str,
+        content_type: str,
+        size_bytes: int,
+    ) -> dict[str, Any]:
+        self.get_artifact(artifact_id)
+        timestamp = now_iso()
+        self.conn.execute(
+            """
+            UPDATE artifacts
+            SET path = ?,
+                filename = ?,
+                content_type = ?,
+                size_bytes = ?,
+                updated_at = ?
+            WHERE artifact_id = ?
+            """,
+            (relative_path, filename, content_type, size_bytes, timestamp, artifact_id),
+        )
+        self.conn.commit()
+        return self.get_artifact(artifact_id)
 
     def get_project_tree(self, project_id: int) -> dict[str, Any]:
         project = self.get_project(project_id)
@@ -526,6 +834,7 @@ class Repository:
                 (worker_id, lease_until, timestamp, timestamp, task_id),
             )
             self._add_task_event(task_id, "leased", f"Leased by {worker_id}")
+            self._touch_worker(worker_id, role=role, status="busy")
         return self.get_task(task_id)
 
     def claim_task(self, task_id: int, worker_id: str, lease_minutes: int) -> dict[str, Any]:
@@ -560,6 +869,7 @@ class Repository:
                 (worker_id, lease_until, timestamp, timestamp, task_id),
             )
             self._add_task_event(task_id, "leased", f"Leased by {worker_id}")
+            self._touch_worker(worker_id, role=task["role"], status="busy")
         return self.get_task(task_id)
 
     def complete_task(self, task_id: int, worker_id: str, payload: WorkerReportCreate) -> dict[str, Any]:
@@ -644,6 +954,7 @@ class Repository:
                 (payload.status, payload.retry_count, payload.status, timestamp, timestamp, task_id),
             )
             self._add_task_event(task_id, "reported", f"{worker_id} reported {payload.status}")
+            self._touch_worker(worker_id, role=task["role"], status="online")
         return self.get_task(task_id)
 
     def list_task_history(
@@ -775,4 +1086,44 @@ class Repository:
         self.conn.execute(
             "INSERT INTO task_events (task_id, event_type, message, created_at) VALUES (?, ?, ?, ?)",
             (task_id, event_type, message, now_iso()),
+        )
+
+    def _ensure_worker(self, worker_id: str, role: str = "", machine_id: str | None = None) -> dict[str, Any]:
+        row = self.conn.execute("SELECT * FROM workers WHERE worker_id = ?", (worker_id,)).fetchone()
+        if row is None:
+            timestamp = now_iso()
+            self.conn.execute(
+                """
+                INSERT INTO workers (
+                    worker_id, display_name, role, machine_id, status,
+                    capabilities_json, assigned_projects_json, workspace_root,
+                    trust_level, notes, created_at, updated_at, last_seen_at
+                )
+                VALUES (?, '', ?, ?, 'offline', '[]', '[]', '', 'limited', '', ?, ?, NULL)
+                """,
+                (worker_id, role, machine_id, timestamp, timestamp),
+            )
+            row = self.conn.execute("SELECT * FROM workers WHERE worker_id = ?", (worker_id,)).fetchone()
+        return row_to_dict(row) or {}
+
+    def _touch_worker(
+        self,
+        worker_id: str,
+        role: str = "",
+        status: str = "online",
+        machine_id: str | None = None,
+    ) -> None:
+        worker = self._ensure_worker(worker_id, role=role, machine_id=machine_id)
+        timestamp = now_iso()
+        self.conn.execute(
+            """
+            UPDATE workers
+            SET role = CASE WHEN role = '' THEN ? ELSE role END,
+                machine_id = COALESCE(machine_id, ?),
+                status = ?,
+                updated_at = ?,
+                last_seen_at = ?
+            WHERE worker_id = ?
+            """,
+            (role or worker["role"], machine_id, status, timestamp, timestamp, worker_id),
         )
