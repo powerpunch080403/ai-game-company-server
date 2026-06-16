@@ -37,6 +37,14 @@ The server can already run the core loop:
 25. Add Discord Gateway runtime skeleton that reuses the dry-run router and can
     reply to mapped messages.
 26. Add Discord bot setup doctor and credential-safe setup guide.
+27. Add Golden Path design and an API-level e2e evidence loop test.
+28. Add `game-pygame-mini` project scaffold with runnable Test Runner preset.
+
+The next v1 priority is no longer broad feature growth. It is Golden Path
+stabilization: make one separate demo project repo complete the task -> worker
+-> commit -> test -> artifact -> report -> Owner review -> merge/retry loop.
+
+Detailed target: [GOLDEN_PATH.md](GOLDEN_PATH.md).
 
 ## Next Work While Main Computer Is Unavailable
 
@@ -78,28 +86,36 @@ Most of this is already implemented.
 
 ## v1 Remaining High Priority
 
-1. Owner Task Planning
+1. Golden Path Stabilization
+   - Baseline contract documented in `docs/GOLDEN_PATH.md`.
+   - API-level evidence loop test is implemented.
+   - `game-pygame-mini` scaffold and Test Runner preset are implemented.
+   - Next: run the loop manually against a separate demo game repo.
+   - Next: add exact rehearsal commands to README after the manual run.
+
+2. Owner Task Planning
    - Baseline contract documented in `docs/OWNER_TASK_PLANNING.md`.
    - Owner prompt now follows the planning contract.
    - Next: add optional local validation helper.
 
-2. Security and Execution Control
+3. Security and Execution Control
    - Role-scoped tokens are implemented.
    - Worker command denylist and optional allowlist are implemented.
    - Artifact upload size limit is implemented.
    - Next: add true streaming upload for large artifacts.
    - FastAPI route modules are split out of `app/main.py`.
 
-3. Test Runner Contract
+4. Test Runner Contract
    - Baseline contract documented in `docs/TEST_RUNNER_CONTRACT.md`.
    - Local report mapping helper and tests are implemented.
    - Local runner wrapper executes configured phases and writes local reports.
    - Full test runner worker loop is implemented.
    - `.game-company/test_runner.json` is included in generated project templates.
-   - Next: add real project-specific build/test presets after engine/framework
-     selection.
+   - Minimal Pygame preset for the Golden Path demo game is implemented.
+   - Next: add project-specific screenshot/runtime capture after the first
+     rehearsal proves the smoke loop.
 
-4. Game Project Template
+5. Game Project Template
    - Engine undecided.
    - Keep template minimal until actual game starts.
    - Support Unity later without locking the server to Unity.
@@ -108,22 +124,24 @@ Most of this is already implemented.
    - Next: connect approved Discord/Owner repo creation flow to the scaffold
      tool.
 
-5. Documentation
+6. Documentation
    - Architecture blueprint documented in `docs/ARCHITECTURE_BLUEPRINT.md`.
    - Hardware/machine inventory documented in `docs/HARDWARE_ENVIRONMENT.md`.
-   - Fix or replace corrupted README.
    - Add API operation examples.
    - Add remote recovery guide.
    - Baseline server configuration documented in `docs/SERVER_CONFIGURATION.md`.
    - Baseline Discord operator console documented in `docs/DISCORD_OPERATOR_CONSOLE.md`.
    - Baseline long-term project memory documented in `docs/LONG_TERM_PROJECT_MEMORY.md`.
    - Baseline visual/MCP tool integration documented in `docs/VISUAL_TOOL_INTEGRATION.md`.
+   - Baseline MCP extension plan documented in `docs/MCP_EXTENSION_PLAN.md`.
 
-6. Owner Review Policy
+7. Owner Review Policy
    - Decide which warnings block merge.
    - Add configurable thresholds.
+   - Keep code/game evidence gaps as warnings until one demo rehearsal shows
+     which rules should become blockers.
 
-7. Discord Bot Runtime
+8. Discord Bot Runtime
    - Mapping API and dry-run routing skeleton are implemented.
    - Context compaction API is implemented for storing thread summaries,
      archiving old summaries, creating continuation mappings, and estimating
@@ -168,11 +186,12 @@ Until then, keep defaults conservative and continue implementation.
 
 These do not require the main computer:
 
-- Rewrite the corrupted README in clean UTF-8 Korean.
-- Connect template scaffold tooling to approved project bootstrap flows.
+- Run or extend Golden Path e2e tests locally.
+- Create a separate demo game repo and rehearse the Golden Path manually.
+- Reuse the implemented `game-pygame-mini` Test Runner preset for rehearsal.
+- Connect template scaffold tooling to approved project bootstrap flows after
+  the Golden Path rehearsal.
 - Add artifact streaming upload design/tests.
-- Add real Discord Gateway adapter for the bot skeleton.
-- Add `.game-company/test_runner.json` to project scaffold templates.
 - Add API examples for the project planning flow.
 - Turn `docs/SERVER_CONFIGURATION.md` into systemd unit files when always-on
   mode is approved.
@@ -182,3 +201,15 @@ These do not require the main computer:
 - Add visual artifact and MCP tool operation schemas before connecting Blender
   or game engine tools.
 - Connect Discord bot actions to Owner/approval/artifact server workflows.
+
+## Scope Discipline Until Early July 2026
+
+Do not expand these areas before the first demo rehearsal unless they directly
+unblock Golden Path:
+
+- Large MCP rollout.
+- Unity and Godot automation at the same time.
+- Parallel multi-worker scheduling.
+- Local GPU worker orchestration.
+- Vector memory.
+- Rich web UI.

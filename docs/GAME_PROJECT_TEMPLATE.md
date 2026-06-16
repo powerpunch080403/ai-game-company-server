@@ -134,6 +134,7 @@ Default template bundle:
 ```text
 common .ai-company/
 game-basic
+game-pygame-mini
 web-basic
 app-basic
 backend-basic
@@ -161,6 +162,7 @@ tests/README.md
 Type-specific examples:
 
 - `game-basic`: engine undecided, visual artifact notes, gameplay docs stub.
+- `game-pygame-mini`: tiny Pygame survival scaffold for Golden Path rehearsal.
 - `web-basic`: frontend/backend/design-system docs stubs.
 - `app-basic`: mobile/api/release notes stubs.
 - `backend-basic`: API/deployment/database docs stubs.
@@ -248,6 +250,14 @@ this document:
   --type game-basic
 ```
 
+Golden Path Pygame demo:
+
+```bash
+./scripts/create_project_template.sh /path/to/ai-survival-mini \
+  --name "AI Survival Mini" \
+  --type game-pygame-mini
+```
+
 Windows PowerShell:
 
 ```powershell
@@ -260,6 +270,7 @@ Supported template types:
 
 ```text
 game-basic
+game-pygame-mini
 web-basic
 app-basic
 backend-basic

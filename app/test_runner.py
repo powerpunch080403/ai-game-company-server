@@ -39,14 +39,14 @@ def relative_posix(path: Path, root: Path) -> str:
 
 
 def load_task_package(path: Path) -> dict[str, Any]:
-    return json.loads(path.read_text(encoding="utf-8"))
+    return json.loads(path.read_text(encoding="utf-8-sig"))
 
 
 def load_test_config(workspace: Path, config_path: str = DEFAULT_CONFIG_PATH) -> dict[str, Any] | None:
     path = workspace / config_path
     if not path.is_file():
         return None
-    return json.loads(path.read_text(encoding="utf-8"))
+    return json.loads(path.read_text(encoding="utf-8-sig"))
 
 
 def artifact_dir_for_run(workspace: Path, config: dict[str, Any] | None, task_id: int, started_at: datetime) -> Path:
@@ -100,7 +100,7 @@ def run_phase_command(
     env["GAME_COMPANY_TASK_PACKAGE"] = str(package_path)
     env["GAME_COMPANY_WORKSPACE"] = str(workspace)
     env["GAME_COMPANY_TEST_ARTIFACT_DIR"] = str(artifact_dir)
-    task_id = json.loads(package_path.read_text(encoding="utf-8"))["task"]["id"]
+    task_id = load_task_package(package_path)["task"]["id"]
     env["GAME_COMPANY_TASK_ID"] = str(task_id)
 
     try:

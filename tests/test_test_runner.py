@@ -101,3 +101,30 @@ def test_run_test_runner_missing_config_returns_blocked_report(tmp_path: Path) -
     assert report["phases"] == []
     assert "Missing .game-company/test_runner.json" in report["issues"][0]
     assert (workspace / report["artifacts"][0]).is_file()
+
+
+def test_run_test_runner_accepts_bom_json_files(tmp_path: Path) -> None:
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    package_path = write_package(tmp_path)
+    package_text = package_path.read_text(encoding="utf-8")
+    package_path.write_text(package_text, encoding="utf-8-sig")
+    config_path = workspace / ".game-company" / "test_runner.json"
+    config_path.parent.mkdir(parents=True, exist_ok=True)
+    config_path.write_text(
+        json.dumps(
+            {
+                "version": 1,
+                "engine": "undecided",
+                "commands": {"setup": [], "build": ["python --version"], "test": [], "run": []},
+                "artifacts": {"root": ".game-company/artifacts"},
+                "timeouts": {"build_seconds": 30},
+            }
+        ),
+        encoding="utf-8-sig",
+    )
+
+    report = run_test_runner(package_path, workspace)
+
+    assert report["status"] == "success"
+    assert report["phases"][0]["name"] == "build"

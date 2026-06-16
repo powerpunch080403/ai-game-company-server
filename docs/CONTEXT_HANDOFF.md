@@ -54,6 +54,8 @@ Do not rely on the remote being available. If the main computer is down, continu
 - Worker registry `last_seen_at` updates from task lease, claim, and report
 - Artifact metadata, raw upload, and raw download APIs
 - Approval/Decision request and decision APIs
+- Golden Path API evidence loop test
+- `game-pygame-mini` project scaffold and Test Runner preset
 - DB backup script
 - Remote deploy script
 
@@ -109,10 +111,34 @@ ssh powerpunch@100.92.73.19 "cd /home/powerpunch/ai-game-company-server && ./scr
 
 If remote is not available, keep working on:
 
+- Golden Path local e2e tests
+- demo project repo rehearsal scripts
+- minimal Pygame Test Runner preset
 - design docs
 - local tests
 - local API behavior
 - scripts that do not need the main computer
+
+## Current Priority
+
+The next v1 priority is Golden Path stabilization, not broad feature expansion.
+
+Target loop:
+
+```text
+Project -> Epic -> Sub Epic -> Task -> worker lease -> task package
+-> worker branch/commit -> Test Runner evidence -> artifact upload
+-> worker report -> Owner merge review -> merge or retry
+```
+
+See:
+
+- `docs/GOLDEN_PATH.md`
+- `docs/MCP_EXTENSION_PLAN.md`
+
+Defer large MCP rollout, rich Discord natural-language operations, local GPU
+workers, vector memory, and web UI until the first demo project rehearsal proves
+the core loop.
 
 ## Latest Local Design Baselines
 
@@ -355,6 +381,21 @@ Implemented after the baseline design:
   - This is the server-side contract only; real Discord message fetching,
     direct Codex CLI context inspection, and automatic LLM summarization are
     still later work.
+- Golden Path:
+  - `docs/GOLDEN_PATH.md` defines the v1 stabilization loop and first demo game
+    rehearsal target.
+  - `tests/test_golden_path.py` verifies the API-level evidence loop:
+    project tree creation, worker lease/package/report, test artifact upload,
+    and Owner merge candidate review.
+  - `app.project_template` supports `game-pygame-mini`, which creates the
+    AI Survival Mini scaffold, stdlib unit tests, a smoke check, and a
+    runnable `.game-company/test_runner.json`.
+- MCP extension:
+  - `docs/MCP_EXTENSION_PLAN.md` records the recommended MCP order:
+    Filesystem, Git, SQLite read-only, Playwright, and Custom Task Package
+    before broader engine/Discord/package-manager tools.
+  - MCP tools must go through permissions, audit logging, and approval policy;
+    they should not bypass the FastAPI source of truth.
 
 These contracts deliberately do not choose the first real game engine and do not
 make merge warnings blocking. Ask the user before making either decision.

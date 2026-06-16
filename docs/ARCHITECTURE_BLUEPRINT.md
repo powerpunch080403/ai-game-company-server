@@ -458,23 +458,23 @@ Read in this order:
     and MCP/tool integration.
 13. [TEST_RUNNER_CONTRACT.md](TEST_RUNNER_CONTRACT.md) - validation worker.
 14. [GAME_PROJECT_TEMPLATE.md](GAME_PROJECT_TEMPLATE.md) - project scaffolds.
+15. [GOLDEN_PATH.md](GOLDEN_PATH.md) - v1 stabilization loop.
+16. [MCP_EXTENSION_PLAN.md](MCP_EXTENSION_PLAN.md) - controlled MCP expansion.
 
 ## Current Next Implementation Recommendation
 
-Before writing the Discord bot, continue the server-side foundation:
-
-Done:
-
-- Worker and machine registry.
-- Machine and Worker heartbeat.
-- Worker `last_seen_at` update from task lease, claim, and report activity.
-- Artifact metadata records.
-- Artifact raw content upload/download.
-- Approval/decision records.
+Stop broadening v1 until the Golden Path is proven against a separate demo
+project repo.
 
 Next:
 
-1. Discord mapping records.
-2. Memory tag/search helpers.
-3. Test runner wrapper/report mapping.
-4. Project scaffold script.
+1. Run the API-level Golden Path evidence loop in tests.
+2. Create a tiny demo game repo, separate from the server repo.
+3. Rehearse worker branch, commit, Test Runner report, artifact upload, Owner
+   merge review, and merge or retry.
+4. Add a minimal Pygame Test Runner preset for the demo project.
+5. Convert useful merge warnings into configurable blockers only after the
+   rehearsal shows they are reliable.
+
+MCP, Discord, local GPU workers, and rich web UI should remain extension work
+unless they directly support this loop.

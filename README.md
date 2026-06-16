@@ -66,6 +66,8 @@ Not implemented yet:
 - [Test Runner Contract](docs/TEST_RUNNER_CONTRACT.md)
 - [Game Project Template](docs/GAME_PROJECT_TEMPLATE.md)
 - [Hardware Environment](docs/HARDWARE_ENVIRONMENT.md)
+- [Golden Path v1](docs/GOLDEN_PATH.md)
+- [MCP Extension Plan](docs/MCP_EXTENSION_PLAN.md)
 
 ## Quick Start
 
@@ -304,6 +306,14 @@ Create a minimal engine-agnostic project repo layout:
   --type game-basic
 ```
 
+Create the Golden Path Pygame demo scaffold:
+
+```bash
+./scripts/create_project_template.sh /path/to/ai-survival-mini \
+  --name "AI Survival Mini" \
+  --type game-pygame-mini
+```
+
 Windows:
 
 ```powershell
@@ -316,6 +326,7 @@ Supported types:
 
 ```text
 game-basic
+game-pygame-mini
 web-basic
 app-basic
 backend-basic
@@ -325,7 +336,9 @@ plugin-basic
 ```
 
 The template includes `.game-company/test_runner.json` and `.ai-company/`
-metadata for future non-game projects.
+metadata for future non-game projects. `game-pygame-mini` includes a tiny
+standard-library smoke loop so Golden Path rehearsal can run before installing
+Pygame for the interactive window.
 
 ## Owner Run
 
@@ -596,8 +609,11 @@ without relying on remote SSH.
 
 Recommended next steps:
 
-1. Test Discord Gateway runtime in a real Discord server.
-2. Connect approval conversations.
-3. Add richer Discord replies for Owner run results and errors.
-4. Add artifact streaming upload.
-5. Add systemd unit files after always-on mode is approved.
+1. Stabilize the Golden Path against a separate demo game repo.
+2. Add a minimal Pygame Test Runner preset for the demo game.
+3. Rehearse worker branch, commit, report, artifact upload, Owner review, and
+   merge or retry.
+4. Document the exact rehearsal commands in README.
+5. Keep Discord at setup/status/approval level until the loop is stable.
+6. Add artifact streaming upload.
+7. Add systemd unit files after always-on mode is approved.
