@@ -97,6 +97,10 @@ def run_phase_command(
         }
 
     env = os.environ.copy()
+    if "SDL_VIDEODRIVER" not in env:
+        env["SDL_VIDEODRIVER"] = "dummy"
+    if "SDL_AUDIODRIVER" not in env:
+        env["SDL_AUDIODRIVER"] = "dummy"
     env["GAME_COMPANY_TASK_PACKAGE"] = str(package_path)
     env["GAME_COMPANY_WORKSPACE"] = str(workspace)
     env["GAME_COMPANY_TEST_ARTIFACT_DIR"] = str(artifact_dir)
