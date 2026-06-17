@@ -35,7 +35,7 @@ Implemented:
 - Workspace Worker for git branch prep, command execution, commit, push, and report.
 - Test Runner wrapper, report mapper, and full test-runner worker loop.
 - Worker and Machine Registry APIs with heartbeat.
-- Artifact metadata, upload, download, retention fields, and size limit.
+- Artifact metadata, streaming upload (request.stream() implemented), download, retention fields, and size limit.
 - Approval request and one-way decision APIs.
 - Role-scoped API tokens.
 - Worker command denylist and optional command allowlist.
@@ -52,7 +52,7 @@ Not implemented yet:
 - Production-tested Discord Gateway deployment.
 - Automatic Discord thread history fetching.
 - Automatic LLM summarization of raw Discord threads.
-- Artifact streaming upload for very large files.
+
 - Real always-on systemd deployment.
 - Web UI.
 - Vector memory search.
