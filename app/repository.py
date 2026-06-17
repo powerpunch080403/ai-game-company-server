@@ -1210,7 +1210,7 @@ class Repository:
                     slug = last_part.removeprefix(prefix)
                 else:
                     slug = last_part
-                updated_branch = f"worker/{worker_id}/{task_id}-{slug}"
+                updated_branch = f"worker/{cfg.node_id}/{task_id}-{slug}"
 
             self.conn.execute(
                 """
@@ -1260,7 +1260,7 @@ class Repository:
                     slug = last_part.removeprefix(prefix)
                 else:
                     slug = last_part
-                updated_branch = f"worker/{worker_id}/{task_id}-{slug}"
+                updated_branch = f"worker/{cfg.node_id}/{task_id}-{slug}"
 
             self.conn.execute(
                 """
