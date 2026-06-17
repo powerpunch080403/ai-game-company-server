@@ -18,7 +18,7 @@ def safe_rmtree(path):
         shutil.rmtree(path, onerror=remove_readonly)
 
 def main():
-    scratch_dir = Path(r"C:\Users\user2\.gemini\antigravity\scratch")
+    scratch_dir = Path(__file__).resolve().parent.parent.parent
     temp_init_dir = scratch_dir / "tmp-init-git"
     bare_git_path = scratch_dir / "unity-game.git"
     workspace_path = scratch_dir / "unity-game-workspace"

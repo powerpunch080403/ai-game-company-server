@@ -6,6 +6,10 @@ also supports app, web, backend, tool, automation, and plugin projects.
 
 This is not a game runtime server. It is a project control plane:
 
+> [!WARNING]
+> * This server is a **non-production prototype** for local or private VPN (e.g., Tailscale) workflows. Do not expose its raw HTTP/WS ports publicly to the open internet without HTTPS and proper token authorization.
+> * **Never commit real credentials, tokens, or API secrets** to this repository or any workspace repository managed by this control plane.
+
 ```text
 User / Owner
   -> Project / Epic / Sub Epic / Task planning

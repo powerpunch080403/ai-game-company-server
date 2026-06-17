@@ -43,9 +43,11 @@ def test_mcp_path_confinement() -> None:
     config = get_server_config("filesystem")
     assert config is not None
 
-    # Allowed roots contains C:\Users\user2\.gemini\antigravity\scratch\unity-game-workspace
-    safe_path = "C:\\Users\\user2\\.gemini\\antigravity\\scratch\\unity-game-workspace\\src\\main.py"
-    unsafe_path = "C:\\Windows\\system32\\cmd.exe"
+    # Allowed roots contains the dynamically configured scratch path
+    from pathlib import Path
+    root_path = Path(config.allowed_roots[0])
+    safe_path = str(root_path / "src" / "main.py")
+    unsafe_path = "C:\\Windows\\system32\\cmd.exe" if Path("C:\\").exists() else "/usr/bin/bash"
     
     # 1. Safe subpath (should allow)
     res_safe = validate_mcp_call(config, "read_file", "readonly", target_path=safe_path)
@@ -57,7 +59,7 @@ def test_mcp_path_confinement() -> None:
     assert "lies outside allowed roots" in res_unsafe["reason"]
 
     # 3. Explicit security blacklisted files (.env)
-    env_path = "C:\\Users\\user2\\.gemini\\antigravity\\scratch\\unity-game-workspace\\.env"
+    env_path = str(root_path / ".env")
     res_env = validate_mcp_call(config, "read_file", "readonly", target_path=env_path)
     assert res_env["is_allowed"] is False
     assert "violates system security filters" in res_env["reason"]

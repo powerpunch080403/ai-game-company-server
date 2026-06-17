@@ -17,12 +17,12 @@ Target direction:
 
 - Local workspace: current Codex workspace on the Windows laptop
 - GitHub repo: `powerpunch080403/ai-game-company-server`
-- Main server target: `powerpunch@100.92.73.19`
-- Remote deploy path: `/home/powerpunch/ai-game-company-server`
-- Remote API URL: `http://100.92.73.19:8080`
-- Remote game demo bare repo: `/home/powerpunch/game-repos/demo-game.git`
-- Remote demo workspace: `/home/powerpunch/game-workspaces/demo-game`
-- Remote demo worker workspace: `/home/powerpunch/game-workspaces/demo-game-worker`
+- Main server target: `<REMOTE_USER>@<REMOTE_HOST>`
+- Remote deploy path: `<HOME_DIR>/ai-game-company-server`
+- Remote API URL: `http://<REMOTE_HOST>:8080`
+- Remote game demo bare repo: `<HOME_DIR>/game-repos/demo-game.git`
+- Remote demo workspace: `<HOME_DIR>/game-workspaces/demo-game`
+- Remote demo worker workspace: `<HOME_DIR>/game-workspaces/demo-game-worker`
 - Hardware and machine inventory: `docs/HARDWARE_ENVIRONMENT.md`
 - Architecture overview for future AI sessions: `docs/ARCHITECTURE_BLUEPRINT.md`
 - Main server specs: Intel Core i5-14600KF, NVIDIA RTX 4070, 32 GB DDR5 RAM,
@@ -76,8 +76,8 @@ As of 2026-06-17, the development environment is running locally on the Windows 
 - **FastAPI Dev Server:** Running on `http://127.0.0.1:8080` (PID `14352`). Connected to `data/game_company.sqlite3`.
 - **Discord Gateway Bot:** Running in the background (PID `5220`), connected to Discord Gateway using token configured in `.env`.
 - **Git Repositories:**
-  - Local bare game repository: `C:\Users\user2\.gemini\antigravity\scratch\unity-game.git`
-  - Local dev workspace: `C:\Users\user2\.gemini\antigravity\scratch\unity-game-workspace`
+  - Local bare game repository: `<WORKSPACE_PATH>/unity-game.git`
+  - Local dev workspace: `<WORKSPACE_PATH>/unity-game-workspace`
 - **Seeded Tasks & Status (Project ID 1: Maldhalla-class Game):**
   - **Epic ID 1:** "Unity Project Bootstrap" (status: active)
   - **Sub-Epic ID 1:** "Unity Skeleton Setup" (status: active)
@@ -96,18 +96,18 @@ python -m pytest
 ```
 
 And review:
-- [TODO List](file:///C:/Users/user2/.gemini/antigravity/scratch/ai-game-company-server/docs/TODO_LIST.md) for current tasks and priorities.
+- [TODO List](TODO_LIST.md) for current tasks and priorities.
 
 If remote is available:
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File .\scripts\deploy_main_server.ps1 -HostName powerpunch@100.92.73.19 -RemoteDir /home/powerpunch/ai-game-company-server
+powershell -ExecutionPolicy Bypass -File .\scripts\deploy_main_server.ps1 -HostName <REMOTE_USER>@<REMOTE_HOST> -RemoteDir <HOME_DIR>/ai-game-company-server
 ```
 
 Then verify:
 
 ```bash
-ssh powerpunch@100.92.73.19 "cd /home/powerpunch/ai-game-company-server && ./scripts/start_server.sh && curl -sS http://127.0.0.1:8080/health"
+ssh <REMOTE_USER>@<REMOTE_HOST> "cd <HOME_DIR>/ai-game-company-server && ./scripts/start_server.sh && curl -sS http://127.0.0.1:8080/health"
 ```
 
 If remote is not available, keep working on:

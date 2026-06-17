@@ -43,7 +43,7 @@ graph TD
     "description": "2D neon-style top-down survival game developed using Pygame-ce. Functions as a dual portfolio showcase and E2E verification harness for all AI Game Company Server safeguards.",
     "engine": "pygame",
     "repo_url": "https://github.com/powerpunch080403/neon-survival-prototype.git",
-    "workspace_path": "C:\\Users\\user2\\.gemini\\antigravity\\scratch\\neon-survival-workspace",
+    "workspace_path": "<WORKSPACE_PATH>",
     "base_branch": "main"
   },
   "epics": [

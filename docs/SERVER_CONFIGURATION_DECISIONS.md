@@ -104,7 +104,7 @@
    v1 초기에는 프로젝트별 기본 workspace를 1개만 둔다.
 
    ```text
-   /home/powerpunch/game-workspaces/{project}
+   <HOME_DIR>/game-workspaces/{project}
    ```
 
    단, 별도 테스트 머신과 미래 병렬 작업을 위해 worker별 workspace 구조를
@@ -113,9 +113,9 @@
    미래 확장 예:
 
    ```text
-   /home/powerpunch/game-workspaces/{project}/main
-   /home/powerpunch/game-workspaces/{project}/workers/{worker_id}
-   /home/powerpunch/game-workspaces/{project}/test-runners/{machine_id}
+   <HOME_DIR>/game-workspaces/{project}/main
+   <HOME_DIR>/game-workspaces/{project}/workers/{worker_id}
+   <HOME_DIR>/game-workspaces/{project}/test-runners/{machine_id}
    ```
 
 2. 장점

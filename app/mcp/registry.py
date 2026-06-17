@@ -1,6 +1,10 @@
 from __future__ import annotations
+from pathlib import Path
 
 from app.mcp.schemas import MCPServerConfig
+
+# Determine scratch path dynamically relative to this file
+_SCRATCH_DIR = Path(__file__).resolve().parent.parent.parent
 
 # Default registry mapping
 _REGISTRY: dict[str, MCPServerConfig] = {
@@ -18,8 +22,8 @@ _REGISTRY: dict[str, MCPServerConfig] = {
         # Real game workspace roots must be supplied by environment or config before actual MCP usage.
         # No external MCP server should be invoked during the first game bootstrap, and Task 11 must run dry-run only.
         allowed_roots=[
-            "C:\\Users\\user2\\.gemini\\antigravity\\scratch\\unity-game-workspace",
-            "C:\\Users\\user2\\.gemini\\antigravity\\scratch\\ai-game-company-server\\rehearsal"
+            str(_SCRATCH_DIR / "unity-game-workspace"),
+            str(_SCRATCH_DIR / "ai-game-company-server" / "rehearsal")
         ],
         approval_required_tools=["write_file"]
     ),

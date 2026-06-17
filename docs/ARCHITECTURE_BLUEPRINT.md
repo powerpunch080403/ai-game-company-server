@@ -23,14 +23,14 @@ powerpunch080403/ai-game-company-server
 Local workspace:
 
 ```text
-C:\Users\user2\Documents\게임 개발 서버 v1개발
+<LOCAL_WORKSPACE_PATH>
 ```
 
 Main server target:
 
 ```text
-powerpunch@100.92.73.19
-/home/powerpunch/ai-game-company-server
+<REMOTE_USER>@<REMOTE_HOST>
+<REMOTE_DIR>
 ```
 
 The main server may be powered off. Do not require SSH for local design, docs,

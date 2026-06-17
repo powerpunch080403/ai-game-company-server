@@ -696,7 +696,7 @@ GitHub private repo를 만들 준비가 됐어.
 Project: dashboard-web
 Repo: powerpunch080403/dashboard-web
 Template: web-basic
-Workspace: /home/powerpunch/project-workspaces/dashboard-web
+Workspace: <HOME_DIR>/project-workspaces/dashboard-web
 
 승인하려면 "진행해"라고 말해줘.
 

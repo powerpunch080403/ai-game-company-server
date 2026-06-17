@@ -67,7 +67,7 @@ flowchart TD
 Recommended main server path:
 
 ```text
-/home/powerpunch/ai-game-company-server
+<HOME_DIR>/ai-game-company-server
 ```
 
 Components that run from this checkout:
@@ -100,7 +100,7 @@ the API.
 Recommended runtime directories:
 
 ```text
-/home/powerpunch/ai-game-company-server/
+<HOME_DIR>/ai-game-company-server/
   .env
   data/
     game_company.sqlite3
@@ -142,13 +142,13 @@ Game project repositories must be separate. They contain:
 Recommended paths on the main server:
 
 ```text
-/home/powerpunch/ai-game-company-server
-/home/powerpunch/game-repos/{project}.git
-/home/powerpunch/game-workspaces/{project}
+<HOME_DIR>/ai-game-company-server
+<HOME_DIR>/game-repos/{project}.git
+<HOME_DIR>/game-workspaces/{project}
 ```
 
 For GitHub-hosted game repos, `repo_url` should point to GitHub. For local
-bare repos, `repo_url` can point to `/home/powerpunch/game-repos/{project}.git`.
+bare repos, `repo_url` can point to `<HOME_DIR>/game-repos/{project}.git`.
 
 ## Workspace Model
 
@@ -167,9 +167,9 @@ for friends or additional machines to work in parallel later.
 Future workspace model:
 
 ```text
-/home/powerpunch/game-workspaces/{project}/main
-/home/powerpunch/game-workspaces/{project}/workers/{worker_id}
-/home/powerpunch/game-workspaces/{project}/test-runners/{machine_id}
+<HOME_DIR>/game-workspaces/{project}/main
+<HOME_DIR>/game-workspaces/{project}/workers/{worker_id}
+<HOME_DIR>/game-workspaces/{project}/test-runners/{machine_id}
 ```
 
 Per-worker workspaces or git worktrees should be added when parallel workers
@@ -247,7 +247,7 @@ Example shape:
 ```env
 GAME_COMPANY_OWNER_COMMAND='codex exec --full-auto --model <owner-model> --prompt-file {prompt_file}'
 GAME_COMPANY_OWNER_TIMEOUT_SECONDS=900
-GAME_COMPANY_OWNER_RUNS_DIR=/home/powerpunch/ai-game-company-server/owner-runs
+GAME_COMPANY_OWNER_RUNS_DIR=<HOME_DIR>/ai-game-company-server/owner-runs
 ```
 
 The exact Codex CLI flags should be verified locally before making this a
@@ -364,7 +364,7 @@ issues, and artifact metadata.
 SQLite database path:
 
 ```env
-GAME_COMPANY_DB_PATH=/home/powerpunch/ai-game-company-server/data/game_company.sqlite3
+GAME_COMPANY_DB_PATH=<HOME_DIR>/ai-game-company-server/data/game_company.sqlite3
 ```
 
 The same SQLite database stores:
@@ -433,7 +433,7 @@ Windows laptop / Codex Desktop
   -> Discord for normal operation
   -> HTTPS public endpoint later if needed
   -> Tailscale SSH/HTTP for admin recovery
-Main Ubuntu server 100.92.73.19
+Main Ubuntu server <REMOTE_HOST>
   -> HTTP API for worker lease/report
 12400 / RTX 3060 test runner machine
   -> lease/report API over HTTPS or Tailscale
@@ -487,7 +487,7 @@ Required v1 security baseline:
 Recommended `.env` skeleton:
 
 ```env
-GAME_COMPANY_DB_PATH=/home/powerpunch/ai-game-company-server/data/game_company.sqlite3
+GAME_COMPANY_DB_PATH=<HOME_DIR>/ai-game-company-server/data/game_company.sqlite3
 GAME_COMPANY_HOST=0.0.0.0
 GAME_COMPANY_PORT=8080
 GAME_COMPANY_API_TOKEN=replace-with-generated-admin-token
@@ -496,13 +496,13 @@ GAME_COMPANY_WORKER_TOKEN=replace-with-generated-worker-token
 GAME_COMPANY_READONLY_TOKEN=replace-with-generated-readonly-token
 GAME_COMPANY_ARTIFACT_TOKEN=replace-with-generated-artifact-token
 GAME_COMPANY_ALLOWED_COMMAND_PREFIXES=python -m pytest,npm test
-GAME_COMPANY_BACKUP_DIR=/home/powerpunch/ai-game-company-server/backups
-GAME_COMPANY_ARTIFACT_ROOT=/home/powerpunch/ai-game-company-server/artifacts
+GAME_COMPANY_BACKUP_DIR=<HOME_DIR>/ai-game-company-server/backups
+GAME_COMPANY_ARTIFACT_ROOT=<HOME_DIR>/ai-game-company-server/artifacts
 GAME_COMPANY_MAX_ARTIFACT_UPLOAD_BYTES=104857600
 
 GAME_COMPANY_OWNER_COMMAND=
 GAME_COMPANY_OWNER_TIMEOUT_SECONDS=900
-GAME_COMPANY_OWNER_RUNS_DIR=/home/powerpunch/ai-game-company-server/owner-runs
+GAME_COMPANY_OWNER_RUNS_DIR=<HOME_DIR>/ai-game-company-server/owner-runs
 
 GAME_COMPANY_WORKER_API_BASE_URL=https://api.openai.com/v1
 GAME_COMPANY_WORKER_API_KEY=
@@ -588,7 +588,7 @@ Purpose:
 
 - Always run FastAPI.
 - Restart on failure.
-- Load `/home/powerpunch/ai-game-company-server/.env`.
+- Load `<HOME_DIR>/ai-game-company-server/.env`.
 - Working directory is the server checkout.
 
 ### API Worker Timer

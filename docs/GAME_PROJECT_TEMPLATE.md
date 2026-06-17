@@ -294,7 +294,7 @@ Recommended initial project API payload:
   "description": "Engine-agnostic starting repository for AI Game Company v1.",
   "engine": "undecided",
   "repo_url": "https://github.com/example/demo-game.git",
-  "workspace_path": "/home/powerpunch/game-workspaces/demo-game",
+  "workspace_path": "<WORKSPACE_PATH>",
   "base_branch": "main"
 }
 ```

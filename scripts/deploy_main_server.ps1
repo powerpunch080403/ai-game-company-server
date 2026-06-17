@@ -1,6 +1,6 @@
 param(
-    [string]$Target = "powerpunch@100.92.73.19",
-    [string]$InstallDir = "/home/powerpunch/ai-game-company-server"
+    [string]$Target = "user@remote-host",
+    [string]$InstallDir = "/home/user/ai-game-company-server"
 )
 
 $ErrorActionPreference = "Stop"
@@ -108,6 +108,6 @@ if [ ! -f data/game_company.sqlite3 ]; then .venv/bin/python -m app.seed; fi
 ssh $Target $setupCommand
 
 Write-Host "Deployed to $Target`:$InstallDir"
-Write-Host "External API URL: http://100.92.73.19:8080"
+Write-Host "External API URL: http://<remote-host-ip>:8080"
 Write-Host "API token: $apiToken"
 Write-Host "Start server: ssh $Target 'cd $InstallDir && ./scripts/start_server.sh'"

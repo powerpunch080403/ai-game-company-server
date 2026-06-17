@@ -16,8 +16,8 @@ repo work when SSH is unavailable.
 
 | Machine ID | Kind | Known role | Known details | Unknown details |
 | --- | --- | --- | --- | --- |
-| `local_windows_codex` | local dev machine | Current Codex Desktop workspace, local design, docs, tests | Windows workspace at `C:\Users\user2\Documents\게임 개발 서버 v1개발` | Not intended as always-on server |
-| `main_server` | main server | FastAPI control plane, SQLite, Owner runs, Discord Bot service, API Worker, optional Workspace Worker, backups, future local GPU worker | CPU: Intel Core i5-14600KF; GPU: NVIDIA RTX 4070; RAM: 32 GB DDR5; OS: Ubuntu Desktop; SSH target `powerpunch@100.92.73.19`; deployment path `/home/powerpunch/ai-game-company-server`; API URL currently documented as `http://100.92.73.19:8080`; Linux/systemd target | Disk size, uptime, firewall, public HTTPS setup |
+| `local_windows_codex` | local dev machine | Current Codex Desktop workspace, local design, docs, tests | Windows workspace at `<LOCAL_WORKSPACE_PATH>` | Not intended as always-on server |
+| `main_server` | main server | FastAPI control plane, SQLite, Owner runs, Discord Bot service, API Worker, optional Workspace Worker, backups, future local GPU worker | CPU: Intel Core i5-14600KF; GPU: NVIDIA RTX 4070; RAM: 32 GB DDR5; OS: Ubuntu Desktop; SSH target `<REMOTE_USER>@<REMOTE_HOST>`; deployment path `<REMOTE_DIR>`; API URL currently documented as `http://<REMOTE_HOST>:8080`; Linux/systemd target | Disk size, uptime, firewall, public HTTPS setup |
 | `test_runner_12400_3060` | test runner machine | Build/test/run projects, capture screenshots/videos/logs, upload artifacts | Planned CPU/GPU: Intel i5-12400 and NVIDIA RTX 3060 | OS, hostname, Tailscale IP, workspace root, artifact root, installed engines/tools |
 | `future_friend_worker` | future worker machine | Friend or additional worker server for parallel development | Direction only | Owner, host, specs, trust level, workspace root |
 | `future_gpu_worker` | future GPU/local LLM worker | Local model server, graphics or GPU-heavy worker tasks | Direction only | GPU model, model server, API endpoint, cost/power limits |
@@ -80,22 +80,22 @@ capabilities: build, test, run_game, screenshot, video_capture, gpu
 Server repo:
 
 ```text
-/home/powerpunch/ai-game-company-server
+<REMOTE_DIR>
 ```
 
 Main server project paths:
 
 ```text
-/home/powerpunch/game-repos/{project}.git
-/home/powerpunch/game-workspaces/{project}
+<HOME_DIR>/game-repos/{project}.git
+<HOME_DIR>/game-workspaces/{project}
 ```
 
 Future multi-machine workspace convention:
 
 ```text
-/home/powerpunch/game-workspaces/{project}/main
-/home/powerpunch/game-workspaces/{project}/workers/{worker_id}
-/home/powerpunch/game-workspaces/{project}/test-runners/{machine_id}
+<HOME_DIR>/game-workspaces/{project}/main
+<HOME_DIR>/game-workspaces/{project}/workers/{worker_id}
+<HOME_DIR>/game-workspaces/{project}/test-runners/{machine_id}
 ```
 
 Test runner local paths are not confirmed yet. Do not hard-code them until the
@@ -105,8 +105,8 @@ machine is online and its OS/path layout is chosen.
 
 Known:
 
-- Main server Tailscale/SSH target: `powerpunch@100.92.73.19`
-- Current documented API URL: `http://100.92.73.19:8080`
+- Main server Tailscale/SSH target: `<REMOTE_USER>@<REMOTE_HOST>`
+- Current documented API URL: `http://<REMOTE_HOST>:8080`
 - Raw public `:8080` exposure is not allowed.
 - Discord is the primary human operation interface.
 - Tailscale/SSH is the admin and recovery path.
