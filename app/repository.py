@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import fnmatch
 import json
 import sqlite3
 import subprocess
@@ -80,6 +81,14 @@ def row_to_dict(row: sqlite3.Row | None) -> dict[str, Any] | None:
     ):
         if key in item:
             item[key.removesuffix("_json")] = json.loads(item.pop(key))
+    for key in (
+        "write_scope_json",
+        "read_scope_json",
+        "forbidden_scope_json",
+    ):
+        if key in item:
+            val = item.pop(key)
+            item[key.removesuffix("_json")] = json.loads(val) if val is not None else None
     if "enabled" in item:
         item["enabled"] = bool(item["enabled"])
     for key in ("important", "release_or_milestone"):
@@ -111,6 +120,46 @@ def get_current_base_commit(repo_path: str, default_branch: str = "main") -> str
         return None
     except Exception:
         return None
+
+
+def validate_changed_files_scope(
+    changed_files: list[str],
+    write_scope: list[str] | None,
+    forbidden_scope: list[str] | None,
+) -> tuple[bool, list[str]]:
+    if not changed_files:
+        return True, []
+
+    norm_files = [f.replace("\\", "/") for f in changed_files]
+    norm_write = [w.replace("\\", "/") for w in write_scope] if write_scope is not None else None
+    norm_forbidden = [f.replace("\\", "/") for f in forbidden_scope] if forbidden_scope is not None else None
+
+    # 1. Check forbidden scope
+    if norm_forbidden:
+        violated_forbidden = []
+        for f in norm_files:
+            for pat in norm_forbidden:
+                if fnmatch.fnmatch(f, pat):
+                    violated_forbidden.append(f)
+                    break
+        if violated_forbidden:
+            return False, violated_forbidden
+
+    # 2. Check write scope
+    if norm_write:
+        violated_write = []
+        for f in norm_files:
+            matched = False
+            for pat in norm_write:
+                if fnmatch.fnmatch(f, pat):
+                    matched = True
+                    break
+            if not matched:
+                violated_write.append(f)
+        if violated_write:
+            return False, violated_write
+
+    return True, []
 
 
 class Repository:
@@ -1005,9 +1054,10 @@ class Repository:
             """
             INSERT INTO tasks (
                 sub_epic_id, role, goal, requirements_json, success_criteria_json,
-                estimated_minutes, memory_refs_json, branch, created_at, updated_at
+                estimated_minutes, memory_refs_json, branch, created_at, updated_at,
+                write_scope_json, read_scope_json, forbidden_scope_json
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 sub_epic_id,
@@ -1020,6 +1070,9 @@ class Repository:
                 payload.branch,
                 timestamp,
                 timestamp,
+                json.dumps(payload.write_scope) if payload.write_scope is not None else None,
+                json.dumps(payload.read_scope) if payload.read_scope is not None else None,
+                json.dumps(payload.forbidden_scope) if payload.forbidden_scope is not None else None,
             ),
         )
         self._add_task_event(cur.lastrowid, "created", "Task created")
@@ -1275,8 +1328,8 @@ class Repository:
             task = row_to_dict(row) or {}
             if task["status"] == "success":
                 raise ValueError("successful task cannot be claimed")
-            if task["status"] in {"failed", "blocked", "needs_rebase"}:
-                raise ValueError("failed or blocked task must be retried before claim")
+            if task["status"] in {"failed", "blocked", "needs_rebase", "scope_violation"}:
+                raise ValueError("failed, blocked, needs_rebase, or scope_violation task must be retried before claim")
             if (
                 task["status"] == "running"
                 and task["leased_by"] != worker_id
@@ -1334,6 +1387,7 @@ class Repository:
         # Stale-base detection: if worker reports success but main has moved, mark needs_rebase
         final_status = payload.status
         stale_msg = ""
+        scope_violation_msg = ""
         if payload.status == "success":
             task_base_commit = task.get("base_commit")
             if task_base_commit:
@@ -1349,6 +1403,16 @@ class Repository:
                                 f"base moved from {task_base_commit[:12]} to "
                                 f"{current_commit[:12]}; rebase required before merge"
                             )
+
+            if payload.changed_files is not None:
+                write_scope = task.get("write_scope")
+                forbidden_scope = task.get("forbidden_scope")
+                is_valid, violated = validate_changed_files_scope(
+                    payload.changed_files, write_scope, forbidden_scope
+                )
+                if not is_valid:
+                    final_status = "scope_violation"
+                    scope_violation_msg = f"Scope violation: modified files {violated} outside allowed policy"
 
         with transaction(self.conn):
             report_cur = self.conn.execute(
@@ -1369,7 +1433,7 @@ class Repository:
                     payload.productive_minutes,
                     payload.error_minutes,
                     payload.retry_count,
-                    json.dumps(payload.files_changed),
+                    json.dumps(payload.changed_files if payload.changed_files is not None else payload.files_changed),
                     json.dumps(payload.tests),
                     payload.summary,
                     payload.issues,
@@ -1378,6 +1442,7 @@ class Repository:
             )
             report_id = report_cur.lastrowid
             history_key = f"task_history_{task_id}_{report_id}"
+            reported_files = payload.changed_files if payload.changed_files is not None else payload.files_changed
             history_body = "\n".join(
                 [
                     f"Task: {task['goal']}",
@@ -1388,7 +1453,7 @@ class Repository:
                     f"Productive: {payload.productive_minutes}m",
                     f"Error: {payload.error_minutes}m",
                     f"Retry: {payload.retry_count}",
-                    f"Files: {', '.join(payload.files_changed) if payload.files_changed else 'none'}",
+                    f"Files: {', '.join(reported_files) if reported_files else 'none'}",
                     f"Tests: {', '.join(payload.tests) if payload.tests else 'none'}",
                     f"Summary: {payload.summary}",
                     f"Issues: {payload.issues or 'none'}",
@@ -1420,15 +1485,17 @@ class Repository:
                     retry_count = ?,
                     leased_by = NULL,
                     leased_until = NULL,
-                    completed_at = CASE WHEN ? IN ('success', 'blocked', 'needs_rebase') THEN ? ELSE completed_at END,
+                    completed_at = CASE WHEN ? IN ('success', 'blocked', 'needs_rebase', 'scope_violation') THEN ? ELSE completed_at END,
                     updated_at = ?
                 WHERE id = ?
                 """,
                 (final_status, payload.retry_count, final_status, timestamp, timestamp, task_id),
             )
             self._add_task_event(task_id, "reported", f"{worker_id} reported {final_status}")
-            if stale_msg:
+            if stale_msg and final_status == "needs_rebase":
                 self._add_task_event(task_id, "needs_rebase", stale_msg)
+            if scope_violation_msg:
+                self._add_task_event(task_id, "scope_violation", scope_violation_msg)
             self._touch_worker(worker_id, role=task["role"], status="online")
         return self.get_task(task_id)
 

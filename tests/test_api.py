@@ -1421,3 +1421,183 @@ def test_no_stale_base_when_unchanged(client: TestClient, tmp_path: Path) -> Non
     # base_commit unchanged → status remains success
     assert reported["status"] == "success"
 
+
+# ---------------------------------------------------------------------------
+# Task Write Scope Tracking and Scope Violation Detection Tests
+# ---------------------------------------------------------------------------
+
+def test_scope_validation_absent_scope(client: TestClient) -> None:
+    # A. Existing behavior preserved when write_scope is absent
+    task = client.post("/tasks", json={
+        "role": "code_worker",
+        "goal": "No scope test",
+        "requirements": ["X"],
+        "success_criteria": ["Y"],
+        "estimated_minutes": 15,
+        "branch": "worker/no-scope",
+    }).json()
+    task_id = task["id"]
+    
+    leased = client.post("/workers/worker-a/lease", json={"role": "code_worker", "lease_minutes": 30}).json()
+    assert leased["id"] == task_id
+
+    report = _report_payload("success")
+    report["changed_files"] = ["src/player.py", "tests/test_player.py"]
+    
+    reported = client.post(f"/workers/worker-a/tasks/{task_id}/report", json=report).json()
+    assert reported["status"] == "success"
+
+
+def test_scope_validation_valid_write_scope(client: TestClient) -> None:
+    # B. Valid write_scope
+    task = client.post("/tasks", json={
+        "role": "code_worker",
+        "goal": "Valid scope test",
+        "requirements": ["X"],
+        "success_criteria": ["Y"],
+        "estimated_minutes": 15,
+        "branch": "worker/valid-scope",
+        "write_scope": ["src/player.py", "tests/test_player.py"],
+    }).json()
+    task_id = task["id"]
+    
+    leased = client.post("/workers/worker-b/lease", json={"role": "code_worker", "lease_minutes": 30}).json()
+    assert leased["id"] == task_id
+
+    report = _report_payload("success")
+    report["changed_files"] = ["src/player.py", "tests/test_player.py"]
+    
+    reported = client.post(f"/workers/worker-b/tasks/{task_id}/report", json=report).json()
+    assert reported["status"] == "success"
+
+
+def test_scope_validation_glob_write_scope(client: TestClient) -> None:
+    # C. Glob write_scope
+    task = client.post("/tasks", json={
+        "role": "code_worker",
+        "goal": "Glob scope test",
+        "requirements": ["X"],
+        "success_criteria": ["Y"],
+        "estimated_minutes": 15,
+        "branch": "worker/glob-scope",
+        "write_scope": ["src/**", "tests/**"],
+    }).json()
+    task_id = task["id"]
+    
+    leased = client.post("/workers/worker-c/lease", json={"role": "code_worker", "lease_minutes": 30}).json()
+    assert leased["id"] == task_id
+
+    report = _report_payload("success")
+    report["changed_files"] = ["src/player.py", "tests/test_player.py"]
+    
+    reported = client.post(f"/workers/worker-c/tasks/{task_id}/report", json=report).json()
+    assert reported["status"] == "success"
+
+
+def test_scope_validation_scope_violation(client: TestClient) -> None:
+    # D. Scope violation
+    task = client.post("/tasks", json={
+        "role": "code_worker",
+        "goal": "Scope violation test",
+        "requirements": ["X"],
+        "success_criteria": ["Y"],
+        "estimated_minutes": 15,
+        "branch": "worker/violation-scope",
+        "write_scope": ["src/player.py"],
+    }).json()
+    task_id = task["id"]
+    
+    leased = client.post("/workers/worker-d/lease", json={"role": "code_worker", "lease_minutes": 30}).json()
+    assert leased["id"] == task_id
+
+    report = _report_payload("success")
+    report["changed_files"] = ["src/player.py", "src/enemy.py"]
+    
+    reported = client.post(f"/workers/worker-d/tasks/{task_id}/report", json=report).json()
+    assert reported["status"] == "scope_violation"
+
+    # Task event contains src/enemy.py
+    events = client.get(f"/tasks/{task_id}/events").json()
+    scope_events = [e for e in events if e["event_type"] == "scope_violation"]
+    assert len(scope_events) == 1
+    assert "src/enemy.py" in scope_events[0]["message"]
+
+
+def test_scope_validation_forbidden_scope_violation(client: TestClient) -> None:
+    # E. Forbidden scope violation
+    task = client.post("/tasks", json={
+        "role": "code_worker",
+        "goal": "Forbidden scope test",
+        "requirements": ["X"],
+        "success_criteria": ["Y"],
+        "estimated_minutes": 15,
+        "branch": "worker/forbidden-scope",
+        "write_scope": ["src/**", "tests/**"],
+        "forbidden_scope": [".env", ".github/**"],
+    }).json()
+    task_id = task["id"]
+    
+    leased = client.post("/workers/worker-e/lease", json={"role": "code_worker", "lease_minutes": 30}).json()
+    assert leased["id"] == task_id
+
+    report = _report_payload("success")
+    report["changed_files"] = [".github/workflows/ci.yml"]
+    
+    reported = client.post(f"/workers/worker-e/tasks/{task_id}/report", json=report).json()
+    assert reported["status"] == "scope_violation"
+
+
+def test_scope_validation_no_changed_files(client: TestClient) -> None:
+    # F. No changed_files (preserves existing behavior)
+    task = client.post("/tasks", json={
+        "role": "code_worker",
+        "goal": "No changed files test",
+        "requirements": ["X"],
+        "success_criteria": ["Y"],
+        "estimated_minutes": 15,
+        "branch": "worker/no-changed-files",
+        "write_scope": ["src/**"],
+    }).json()
+    task_id = task["id"]
+    
+    leased = client.post("/workers/worker-f/lease", json={"role": "code_worker", "lease_minutes": 30}).json()
+    assert leased["id"] == task_id
+
+    # Omit changed_files from report payload
+    report = _report_payload("success")
+    assert "changed_files" not in report
+    
+    reported = client.post(f"/workers/worker-f/tasks/{task_id}/report", json=report).json()
+    assert reported["status"] == "success"
+
+
+def test_scope_validation_retry_and_claim_blocks(client: TestClient) -> None:
+    # G. Retry behavior & Claim block
+    task = client.post("/tasks", json={
+        "role": "code_worker",
+        "goal": "Retry block test",
+        "requirements": ["X"],
+        "success_criteria": ["Y"],
+        "estimated_minutes": 15,
+        "branch": "worker/retry-block",
+        "write_scope": ["src/player.py"],
+    }).json()
+    task_id = task["id"]
+    
+    leased = client.post("/workers/worker-g/lease", json={"role": "code_worker", "lease_minutes": 30}).json()
+    assert leased["id"] == task_id
+    
+    report = _report_payload("success")
+    report["changed_files"] = ["src/enemy.py"]
+    reported = client.post(f"/workers/worker-g/tasks/{task_id}/report", json=report).json()
+    assert reported["status"] == "scope_violation"
+
+    # Try claiming the task in scope_violation status -> should fail with 409
+    claim_res = client.post(f"/workers/worker-g/tasks/{task_id}/claim", json={"lease_minutes": 30})
+    assert claim_res.status_code == 409
+
+    # Retry the task -> should succeed and reset to pending
+    retried = client.post(f"/owner/tasks/{task_id}/retry", json={"reason": "Fix scope issue"}).json()
+    assert retried["status"] == "pending"
+    assert retried["retry_count"] == 1
+

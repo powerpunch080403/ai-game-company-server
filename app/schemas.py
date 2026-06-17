@@ -88,6 +88,9 @@ class TaskCreate(BaseModel):
     estimated_minutes: int = Field(default=15, ge=1, le=240)
     memory_refs: list[str] = Field(default_factory=list)
     branch: str = Field(min_length=1)
+    write_scope: list[str] | None = None
+    read_scope: list[str] | None = None
+    forbidden_scope: list[str] | None = None
 
 
 class WorkerLeaseRequest(BaseModel):
@@ -111,6 +114,7 @@ class WorkerReportCreate(BaseModel):
     tests: list[str] = Field(default_factory=list)
     summary: str = ""
     issues: str = ""
+    changed_files: list[str] | None = None
 
 
 class OwnerRunCreate(BaseModel):

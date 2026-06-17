@@ -75,7 +75,10 @@ CREATE TABLE IF NOT EXISTS tasks (
     updated_at TEXT NOT NULL,
     started_at TEXT,
     completed_at TEXT,
-    base_commit TEXT
+    base_commit TEXT,
+    write_scope_json TEXT,
+    read_scope_json TEXT,
+    forbidden_scope_json TEXT
 );
 
 CREATE INDEX IF NOT EXISTS idx_tasks_status_role ON tasks(status, role);
@@ -262,6 +265,9 @@ PROJECT_COLUMNS = {
 
 TASK_COLUMNS = {
     "base_commit": "TEXT",
+    "write_scope_json": "TEXT",
+    "read_scope_json": "TEXT",
+    "forbidden_scope_json": "TEXT",
 }
 
 

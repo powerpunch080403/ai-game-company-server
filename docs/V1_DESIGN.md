@@ -70,6 +70,9 @@ Each task must include:
 - Memory Refs
 - Branch
 - `base_commit` — git commit hash of the default branch at lease/claim time (nullable; None for orphan tasks or when git is unavailable)
+- `write_scope` — allowed file path glob patterns (nullable list of strings)
+- `read_scope` — read-only path globs (informational; nullable list of strings)
+- `forbidden_scope` — patterns the task must never modify (nullable list of strings)
 
 Detailed planning rules live in [OWNER_TASK_PLANNING.md](OWNER_TASK_PLANNING.md).
 
@@ -193,6 +196,7 @@ Current merge requirements:
 
 Task status values include: `pending`, `running`, `success`, `failed`, `blocked`, `canceled`, and:
 - `needs_rebase` — reported as success but `base_commit` has moved; must be retried before merge
+- `scope_violation` — modified files violate write_scope or forbidden_scope; must be retried before merge
 
 Warnings:
 
