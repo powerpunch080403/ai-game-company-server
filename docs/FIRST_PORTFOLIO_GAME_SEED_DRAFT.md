@@ -239,13 +239,13 @@ graph TD
       "branch": "worker/merge-policy-challenge",
       "estimated_minutes": 20,
       "requirements": [
-        "1. Write a failing test in tests/test_player.py, OR modify main.py to raise an exception on start, OR omit uploading the required unit test log evidence.",
+        "1. Create a synthetic validation pull request draft or document challenge that intentionally lacks test log evidence.",
         "2. Trigger a lease submit/merge request to the server.",
-        "3. Confirm that the server's 'eval_merge_policy' triggers a block/fail response."
+        "3. Verify that the Merge Review Policy checker correctly blocks the merge request and triggers a warning/block failure report."
       ],
       "success_criteria": [
-        "The merge request is rejected by the server.",
-        "The reason indicates validation failures or missing evidence files."
+        "The merge request is rejected by the server's policy checker.",
+        "The main branch remains completely unaffected and game code is not broken."
       ],
       "evidence_required": "Server response status showing rejected merge for branch worker/merge-policy-challenge.",
       "memory_refs": ["coding_rules"]
@@ -257,16 +257,15 @@ graph TD
       "branch": "worker/release-candidate",
       "estimated_minutes": 30,
       "requirements": [
-        "1. Create the final codebase ensuring all test cases pass perfectly.",
+        "1. Package the final codebase into a local release candidate artifact.",
         "2. Submit the merge request, registering it as a Release Candidate approval request.",
-        "3. Wait for the server to ping Discord channel #approval-inbox.",
-        "4. Respond on Discord with positive natural language like '승인합니다' or '좋아 진행해'.",
-        "5. Verify that the Discord gateway processes this response, updates DB approval record to 'approved', and successfully merges the code.",
-        "6. Upload the final build artifact marked with important=1 and release_or_milestone=1."
+        "3. Simulate Discord approval flow using safe phrase/dry-run commands (e.g. '승인').",
+        "4. Verify that the Discord gateway processes this response, updates DB approval status, and merges the branch.",
+        "5. Upload the final build artifact marked with important=1 and release_or_milestone=1."
       ],
       "success_criteria": [
-        "The task is merged into main via Discord natural language approval.",
-        "Artifact metadata database entries show important=1 and release_or_milestone=1."
+        "The branch is merged using safe phrase dry-run simulation.",
+        "Release artifact metadata is correctly flagged."
       ],
       "evidence_required": "Discord Gateway log output and SQLite artifact metadata records.",
       "memory_refs": ["project_rules"]
@@ -281,12 +280,13 @@ graph TD
         "1. Run 'python scripts/cleanup_artifacts.py' targeting the workspace folder in dry-run mode.",
         "2. Confirm that only expired, non-important files are listed as delete candidates, while critical release artifacts are untouched.",
         "3. Call validate_mcp_call() using filesystem config to verify attempts to access outside allowed roots or accessing '.env' are blocked.",
-        "4. Confirm that SQL database entries are not deleted."
+        "4. Generate docs/DEVELOPMENT_LOG.md summarizing all E2E verification metrics."
       ],
       "success_criteria": [
         "The cleanup script executes in dry-run mode without deleting any files.",
         "The console output lists correct expired logs but skips release files.",
-        "MCP path confinement triggers 'is_allowed=False' for unauthorized files."
+        "MCP path confinement triggers 'is_allowed=False' for unauthorized files.",
+        "docs/DEVELOPMENT_LOG.md exists and contains all E2E verification metrics."
       ],
       "evidence_required": "Command execution stdout console logs.",
       "memory_refs": ["project_rules"]

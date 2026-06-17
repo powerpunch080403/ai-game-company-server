@@ -14,6 +14,9 @@ _REGISTRY: dict[str, MCPServerConfig] = {
             "write_file": "worker",
             "create_file": "worker"
         },
+        # WARNING: The allowed_roots below are demo/skeleton presets.
+        # Real game workspace roots must be supplied by environment or config before actual MCP usage.
+        # No external MCP server should be invoked during the first game bootstrap, and Task 11 must run dry-run only.
         allowed_roots=[
             "C:\\Users\\user2\\.gemini\\antigravity\\scratch\\unity-game-workspace",
             "C:\\Users\\user2\\.gemini\\antigravity\\scratch\\ai-game-company-server\\rehearsal"

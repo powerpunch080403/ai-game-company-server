@@ -19,10 +19,7 @@ design. Do not put real secrets in this repository.
 
 ## Current Status
 
-Estimated v1 completion: about 85%.
-
-**2026-06-17**: Golden Path rehearsal script completed successfully — the full
-loop (scaffold → seed → server → worker → test → artifact → merge) is validated.
+v1 is usable for controlled Task 1 bootstrap. Golden Path rehearsal has been successfully completed, providing the minimum operational baseline to begin the first portfolio game development.
 
 Implemented:
 
@@ -35,7 +32,7 @@ Implemented:
 - Workspace Worker for git branch prep, command execution, commit, push, and report.
 - Test Runner wrapper, report mapper, and full test-runner worker loop.
 - Worker and Machine Registry APIs with heartbeat.
-- Artifact metadata, streaming upload (request.stream() implemented), download, retention fields, and size limit.
+- Artifact metadata, size-limited artifact upload (small artifact upload under configured size limits), download, retention fields, and size limit. (Large-file true streaming upload is not part of the current verified path.)
 - Approval request and one-way decision APIs.
 - Role-scoped API tokens.
 - Worker command denylist and optional command allowlist.
@@ -667,6 +664,6 @@ Recommended next steps:
 4. ~~Document the exact rehearsal commands in README.~~ ✅ Done.
 5. Harden Pygame Test Runner for headless CI/CD environments.
 6. Keep Discord at setup/status/approval level until the loop is stable.
-7. Add artifact streaming upload.
+7. Add size-limited artifact upload under configured size limits (large-file true streaming upload is not part of the current verified path).
 8. Add systemd unit files after always-on mode is approved.
-9. See `docs/TODO_LIST.md` for the complete priority list.
+9. See `docs/TODO_LIST.md` or `docs/NEXT_ANTIGRAVITY_TASK.md` for the complete priority list.

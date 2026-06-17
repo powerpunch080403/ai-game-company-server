@@ -2,7 +2,7 @@
 
 ## Current Status
 
-Estimated v1 completion: about 90%+.
+v1 is usable for controlled Task 1 bootstrap. Golden Path rehearsal has been successfully completed, providing the minimum operational baseline to begin the first portfolio game development.
 
 The server can already run the core loop:
 
@@ -40,11 +40,9 @@ The server can already run the core loop:
 27. Add Golden Path design and an API-level e2e evidence loop test.
 28. Add `game-pygame-mini` project scaffold with runnable Test Runner preset.
 
-The next v1 priority is no longer broad feature growth. It is Golden Path
-stabilization: make one separate demo project repo complete the task -> worker
--> commit -> test -> artifact -> report -> Owner review -> merge/retry loop.
+The next priority is the development of the first portfolio game, starting with **Neon Survival Prototype Task 1: Project Bootstrap**. The Golden Path rehearsal has been completed successfully.
 
-Detailed target: [GOLDEN_PATH.md](GOLDEN_PATH.md).
+Detailed target: [FIRST_PORTFOLIO_GAME_PLAN.md](FIRST_PORTFOLIO_GAME_PLAN.md).
 
 ## Next Work While Main Computer Is Unavailable
 
@@ -100,7 +98,7 @@ Most of this is already implemented.
 3. Security and Execution Control
    - Role-scoped tokens are implemented.
    - Worker command denylist and optional allowlist are implemented.
-   - Artifact upload size limit and streaming upload are implemented (2026-06-17 완료).
+   - Artifact upload size limit and small artifact upload under configured size limits are implemented (2026-06-17 완료).
    - FastAPI route modules are split out of `app/main.py`.
 
 4. Test Runner Contract
@@ -186,7 +184,7 @@ These do not require the main computer:
 - Reuse the implemented `game-pygame-mini` Test Runner preset for rehearsal.
 - Connect template scaffold tooling to approved project bootstrap flows after
   the Golden Path rehearsal.
-- Add artifact streaming upload design/tests.
+- Add size-limited artifact upload design/tests (small artifact upload under configured size limits; large-file true streaming upload is not part of the current verified path).
 - Add API examples for the project planning flow.
 - Turn `docs/SERVER_CONFIGURATION.md` into systemd unit files when always-on
   mode is approved.

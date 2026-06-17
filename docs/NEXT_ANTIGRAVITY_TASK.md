@@ -9,14 +9,17 @@
 > [!WARNING]
 > * **Codex CLI 복구 전 실제 구현 금지**: 사용량이 충전되어 CLI 실행이 활성화되기 전까지는 로컬에서의 코드 구현, DB seed 변경, 또는 worker/test_runner 구동을 일절 금지합니다.
 > * **첫 실행 타겟 제약**: 재개 시 첫 실행은 오직 [FIRST_PORTFOLIO_GAME_RESUMPTION_PROMPT.md](file:///C:/Users/user2/.gemini/antigravity/scratch/ai-game-company-server/docs/FIRST_PORTFOLIO_GAME_RESUMPTION_PROMPT.md)에 지정된 **Task 1 Project Bootstrap**만 수행하여야 합니다.
+> * **Task 1 수동 승인 대기**: Task 1은 자동 머지(Merge)나 Discord 자동 승인 결재를 거치지 않고, 브랜치 푸시 및 report 작성을 완료한 뒤 **수동 Owner review를 대기하는 상태에서 반드시 정지**해야 합니다. (Do not lease Task 2. Do not merge automatically. Stop after bootstrap branch/report is ready for manual Owner review.)
 > * **순차 실행 엄수**: Task 1이 완전히 성공하여 main 브랜치에 정상 병합(Merge)되기 전까지는 Task 2 Basic Game Loop 등 후속 작업을 절대로 시작해서는 안 됩니다.
+> * **Artifact Upload 제한**: 현재 서버 환경에서는 size-limited artifact upload(설정된 max_artifact_upload_bytes 범위 내 소형 아티팩트 업로드) 규격만 지원합니다. 대용량 파일에 대한 실질적인 streaming upload(large-file true streaming upload)는 현재 검증 경로에 포함되어 있지 않습니다.
+> * **MCP의 드라이런 제약**: MCP 연동 시 실제 외부 MCP 프로세스를 구동하지 않고 오직 드라이런 뼈대(skeleton/dry-run) 모드만 사용해야 합니다.
 
 ---
 
 ## 2. 프로젝트 역할 정의 (Project Classification)
 
-* **Neon Survival Prototype**은 단순히 결과물만 내는 미니게임 프로젝트가 아닙니다.
-* 이 프로젝트는 **AI Game Company Server의 v1/v1.5 모든 정책 가드레일과 검증 체계가 End-to-End로 올바르게 작동하는지 입증하기 위한 검증 하네스(Verification Harness)**입니다.
+* **Neon Survival Prototype**은 단순히 결과물만 내는 2D 탑다운 서바이벌 미니게임(playable mini game) 프로젝트가 아닙니다.
+* 이 프로젝트는 **AI Game Company Server의 v1/v1.5 모든 정책 가드레일과 검증 체계가 End-to-End로 올바르게 작동하는지 입증하기 위한 검증 하네스(E2E server validation harness)**입니다.
 * 모든 에이전트 기여는 이 검증 하네스 스펙에 부합하여 각 작업의 성공 증적(Evidence)을 안전하게 업로드하고 검사받아야 합니다.
 
 ---
