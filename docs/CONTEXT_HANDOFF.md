@@ -68,25 +68,22 @@ Do not rely on the remote being available. If the main computer is down, continu
 - Successful or merged tasks are protected from retry/cancel.
 - API keys should not be stored in DB. Store environment variable names only.
 
-## Current Remote State
+## Current Local Server & DB State
 
-Known remote task state after the latest verification:
+As of 2026-06-17, the development environment is running locally on the Windows workspace:
 
-- Task 1: pending, orphan placeholder, not workspace-ready.
-  - Goal: `Create initial Unity repository skeleton`
-  - Decision: leave it for now. It should be handled when a real Unity project starts.
-- Task 2: success.
-- Task 3: success and merged.
-- Task 4: success and merged.
-- Task 5: canceled verification task.
-- Task 6: canceled verification task.
+- **FastAPI Dev Server:** Running on `http://127.0.0.1:8080` (PID `14352`). Connected to `data/game_company.sqlite3`.
+- **Discord Gateway Bot:** Running in the background (PID `5220`), connected to Discord Gateway using token configured in `.env`.
+- **Git Repositories:**
+  - Local bare game repository: `C:\Users\user2\.gemini\antigravity\scratch\unity-game.git`
+  - Local dev workspace: `C:\Users\user2\.gemini\antigravity\scratch\unity-game-workspace`
+- **Seeded Tasks & Status (Project ID 1: Maldhalla-class Game):**
+  - **Epic ID 1:** "Unity Project Bootstrap" (status: active)
+  - **Sub-Epic ID 1:** "Unity Skeleton Setup" (status: active)
+  - **Task ID 1:** "Create initial Unity repository skeleton"
+    - Status: `merged` ✅ (merged by owner into `main` branch, commit: `f609a88c4dfc261e49b21f337fc3e4fd7176ac81`)
+    - Workspace folder skeleton created with Packages/manifest.json and .gitignore.
 
-Remote readiness was:
-
-- `ready: true`
-- blockers: none
-- warning: one pending task is not workspace-ready
-- model profiles: `owner`, `code_worker`
 
 ## If Context Is Lost
 
@@ -136,10 +133,11 @@ Project -> Epic -> Sub Epic -> Task -> worker lease -> task package
 Remaining Golden Path tasks:
 - [x] README.md guide update with exact rehearsal commands. (2026-06-17 완료)
 - [x] Pygame Test Runner headless preset hardening (CI/CD environments). (2026-06-17 완료)
+- [x] Create initial Unity skeleton task lease, execute, and merge loop. (2026-06-17 완료)
 
 Next v1 priorities after Golden Path stabilization:
 - Large file streaming upload (currently 100 MiB limit, in-memory).
-- Discord bot real server integration testing.
+- Discord bot real server integration testing (currently connected to gateway, needs channel mapping and commands setup).
 - Natural-language approval flow completion.
 
 See:
