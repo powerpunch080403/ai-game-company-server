@@ -678,3 +678,14 @@ Recommended next steps:
 7. Add size-limited artifact upload under configured size limits (large-file true streaming upload is not part of the current verified path).
 8. Add systemd unit files after always-on mode is approved.
 9. See `docs/TODO_LIST.md` or `docs/NEXT_ANTIGRAVITY_TASK.md` for the complete priority list.
+
+---
+
+## License
+
+Copyright (c) 2026 Seungmin Im.
+
+This repository is currently published for portfolio, review, and collaboration discussion purposes.
+No open-source license has been granted yet. Unless a separate license is explicitly provided, all rights are reserved.
+
+See [LICENSE](LICENSE).
