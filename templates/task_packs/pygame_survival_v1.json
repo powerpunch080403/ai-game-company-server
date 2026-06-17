@@ -1,0 +1,143 @@
+[
+  {
+    "goal": "Initialize the project directory with .game-company scaffolding and baseline directories.",
+    "role": "code_worker",
+    "branch": "worker/project-bootstrap",
+    "estimated_minutes": 30,
+    "requirements": [
+      "Scaffold project structures for src, tests, and docs using the project template script.",
+      "Create a valid .game-company/project.json and .game-company/test_runner.json using the Pygame mini or basic preset.",
+      "Initialize baseline .gitignore."
+    ],
+    "success_criteria": [
+      ".game-company/test_runner.json exists and validates with exit code 0.",
+      "Baseline directories (src, tests, docs) are present on disk."
+    ],
+    "evidence_required": "Setup logs from workspace execution.",
+    "memory_refs": ["project_rules", "project_knowledge"]
+  },
+  {
+    "goal": "Create the main entry point running a standard Pygame game loop.",
+    "role": "code_worker",
+    "branch": "worker/basic-game-loop",
+    "estimated_minutes": 15,
+    "requirements": [
+      "Create src/main.py implementing a standard pygame loop with initialization, event processing (Quit event), rendering loop, and clock tick.",
+      "Render a solid black or dark grey background."
+    ],
+    "success_criteria": [
+      "Running python src/main.py in dummy mode executes without crashing."
+    ],
+    "evidence_required": "Test runner execution log.",
+    "memory_refs": ["coding_rules"]
+  },
+  {
+    "goal": "Implement WASD player keyboard control and boundary check logic.",
+    "role": "code_worker",
+    "branch": "worker/player-movement",
+    "estimated_minutes": 15,
+    "requirements": [
+      "Implement a Player class in src/player.py with variables for position (x, y) and movement speed.",
+      "Capture WASD keyboard events in the main loop to move the player shape on the screen.",
+      "Prevent the player from leaving the screen boundaries."
+    ],
+    "success_criteria": [
+      "Unittests in tests/test_player.py verify boundaries and movement calculation."
+    ],
+    "evidence_required": "Unittest pass report (test.log).",
+    "memory_refs": ["coding_rules", "project_knowledge"]
+  },
+  {
+    "goal": "Implement an enemy manager that spawns enemies periodically at random positions off-screen.",
+    "role": "code_worker",
+    "branch": "worker/enemy-spawn",
+    "estimated_minutes": 15,
+    "requirements": [
+      "Implement an Enemy class in src/enemy.py and an EnemyManager in src/enemy_manager.py.",
+      "Spawn an enemy off-screen every N frames/seconds and move them towards the player."
+    ],
+    "success_criteria": [
+      "Spawn intervals are verified via unit tests."
+    ],
+    "evidence_required": "Test log containing enemy spawn tests.",
+    "memory_refs": ["project_knowledge"]
+  },
+  {
+    "goal": "Detect player-enemy collisions and subtract player health points.",
+    "role": "code_worker",
+    "branch": "worker/collision-health",
+    "estimated_minutes": 15,
+    "requirements": [
+      "Implement collision detection using bounding box rects (pygame.Rect.colliderect).",
+      "Upon collision, subtract points from player health.",
+      "Trigger player destruction if health <= 0."
+    ],
+    "success_criteria": [
+      "Collision unit tests pass under tests/test_collision.py."
+    ],
+    "evidence_required": "Unit test evidence reports.",
+    "memory_refs": ["coding_rules"]
+  },
+  {
+    "goal": "Render the current elapsed time and player score on the screen using Pygame fonts.",
+    "role": "code_worker",
+    "branch": "worker/score-time-ui",
+    "estimated_minutes": 30,
+    "requirements": [
+      "Initialize Pygame Font rendering in the main loop.",
+      "Render 'Time: Xs' and 'Score: Y' text overlays in the top corner of the screen."
+    ],
+    "success_criteria": [
+      "Render commands operate without errors in headless mode."
+    ],
+    "evidence_required": "Runtime execution log showing font initialization success.",
+    "memory_refs": ["coding_rules"]
+  },
+  {
+    "goal": "Show a game over overlay when health hits 0, and support restarting via pressing space.",
+    "role": "code_worker",
+    "branch": "worker/game-over-restart",
+    "estimated_minutes": 15,
+    "requirements": [
+      "Introduce game states: PLAYING and GAME_OVER.",
+      "Draw 'GAME OVER' text and 'Press SPACE to Restart' text during GAME_OVER state.",
+      "Reset game timer, health, and scores when the Space key is pressed."
+    ],
+    "success_criteria": [
+      "State transitions are covered by unit tests."
+    ],
+    "evidence_required": "Test results and state verify logs.",
+    "memory_refs": ["project_knowledge"]
+  },
+  {
+    "goal": "Implement a script that starts the game loop, takes a screen capture, and gracefully closes.",
+    "role": "code_worker",
+    "branch": "worker/smoke-test-artifact",
+    "estimated_minutes": 30,
+    "requirements": [
+      "Write scripts/smoke_check.py to launch the game using the dummy video driver.",
+      "Take a screenshot of the main screen after 100 frames and save it to .game-company/artifacts/task-X/run-Y/screenshot.png."
+    ],
+    "success_criteria": [
+      "Screenshot file is successfully written to disk."
+    ],
+    "evidence_required": "screenshot.png file on disk.",
+    "memory_refs": ["project_rules", "project_knowledge"]
+  },
+  {
+    "goal": "Update the project README with instructions on how to build, run, and test the game.",
+    "role": "code_worker",
+    "branch": "worker/readme-update",
+    "estimated_minutes": 15,
+    "requirements": [
+      "Document prerequisites (Python version, pygame library).",
+      "List execution commands: python src/main.py.",
+      "List test commands: python -m unittest discover."
+    ],
+    "success_criteria": [
+      "README.md contains verified execution command text blocks."
+    ],
+    "evidence_required": "Changed files validation list in report.",
+    "memory_refs": ["project_rules"]
+  }
+]

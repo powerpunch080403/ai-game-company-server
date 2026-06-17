@@ -1,0 +1,60 @@
+# V1.5 Roadmap
+
+이 문서는 AI Game Company Server v1.5의 범위와 목표, 그리고 실전 투입 준비 단계인 v1.0 이후의 확장 마일스톤을 기술합니다.
+
+---
+
+## 1. V1.5 목표 (Objectives)
+v1.0의 골든패스 안착 이후, AI 에이전트들의 독립성과 외부 도구(MCP) 연결성 및 서버 관리 안정성을 강화하여 **다중 에이전트(Multi-agent) 협업 파이프라인의 실전 투입 준비**를 완성하는 것을 목표로 합니다.
+
+---
+
+## 2. 범위 정의 (In-Scope vs Out-of-Scope)
+
+### v1.5에서 할 것 (In-Scope)
+* **Model Context Protocol (MCP) 준비 설계 및 뼈대 구축**
+  - AI 에이전트가 로컬 파일, Git, DB 리소스에 안전하게 접근할 수 있도록 하는 권한 규칙/레지스트리 가드 구현.
+  - 실제 네트워크 연동 전, 드라이런(dry-run) 모드를 제공하여 사전에 에이전트의 오작동 시나리오를 모의 평가.
+* **아티팩트 정리(Cleanup) 자동화 도구**
+  - 디렉토리 용량 확보를 위해 보관 주기가 지난 임시 파일( logs 등)을 정기적으로 수동/자동 정리할 수 있는 안전한 dry-run 중심 스크립트 구축.
+* **실전 포트폴리오 게임 태스크 팩(Task Pack) 규격화**
+  - 첫 게임 개발 투입에 필요한 9단계 태스크의 세부 스키마와 요구사항을 JSON 템플릿으로 제공하여 Owner가 일관된 품질의 태스크를 생성하도록 가이드.
+
+### v1.5에서 하지 않을 것 (Out-of-Scope)
+* **외부 MCP 서버 실제 네트워크/프로세스 직접 호출 구현** (본 단계에서는 보안과 오프라인 검증을 위해 registry와 guard 검증까지만 진행).
+* **Workspace Worker의 병렬 스케줄링 및 분산 락 구현** (단일 worker 실행 모델 유지).
+* **Web UI 어드민 대시보드 개발** (Discord 및 API/CLI 통제 유지).
+* **Vector Memory / Semantic Search 검색 엔진 탑재** (SQLite 기본 search 유지).
+* **Unity/Godot 엔진 완전 자동화 파이프라인 구축** (Pygame 기반 데모 및 이식 수준으로 제한).
+
+---
+
+## 3. V1과 V1.5의 차이점
+
+| 구분 | V1.0 (Core Engine) | V1.5 (Production Ready) |
+| --- | --- | --- |
+| **에이전트 통제** | Owner 및 Worker API에 의한 순차 실행 | MCP Server/Registry를 통한 도구 실행 권한 세분화 |
+| **운영 관리** | 수동 아티팩트 보관 및 DB 로깅 | 백그라운드 아티팩트 정리 드라이런 및 자동 Purge 뼈대 |
+| **태스크 생성** | Owner 모델 프롬프트 가이드 의존 | 구조화된 Task Pack JSON 템플릿 바인딩 |
+| **안전성** | API 키 노출 방지 및 명령 데니어스트 | 룰 기반 자연어 결재 검증 및 validator 사전 검사 |
+
+---
+
+## 4. 첫 포트폴리오 게임 개발과 V1.5의 관계
+* 첫 포트폴리오 게임(Survival Game 등)은 V1.0의 안정화된 코어(FastAPI + Git Workspace + Test Runner)를 사용하여 우선 개발을 개시합니다.
+* V1.5의 MCP 설계 및 Validator, Task Pack은 포트폴리오 개발이 시작되는 동안 **AI 에이전트들의 오작동률을 낮추고(Task Validator), 휴먼 에러에 의한 부정 머지를 방지(Merge Review Policy)하며, 축적되는 아티팩트 용량을 제어(Artifact Cleanup)하는 실전 가드레일** 역할을 합니다.
+
+---
+
+## 5. MCP Registry & Dry-Run 설계 원칙
+* **안전 우선(Registry & Permission First)**: 외부 LLM이 직접 셸이나 파일 시스템을 조작하도록 외부에 직접 연결하기 전에, 권한 매트릭스(`readonly`, `worker`, `owner`, `admin` 역할 별 허용 목록)와 허용 디렉토리 경로(`allowed_roots`)를 검사하는 Permission Guard를 먼저 구현합니다.
+* **드라이런 모드(Dry-run) 기본 탑재**: 실제 파일 시스템 수정이나 Git 조작을 수행하지 않고, 권한 통과 여부 및 수행 예정 액션(Planned Action JSON)만을 반환하는 구조를 제공하여 시뮬레이션을 가능케 합니다.
+
+---
+
+## 6. 테스트 가능 시점의 검증 체크리스트
+향후 AI CLI 사용량 해제 및 원격 서버 복구 등 테스트가 가능한 환경이 갖추어지면 다음 시나리오를 점검해야 합니다:
+1. `python -m pytest tests/test_mcp_permissions.py`를 실행하여 MCP 툴 권한 검사 오류 검출 확인.
+2. `python -m pytest tests/test_artifact_cleanup.py`를 실행하여 30일 초과 아티팩트 지우기 기능 검증.
+3. `python scripts/cleanup_artifacts.py --apply`를 호출하여 실제 만료된 파일만 디스크에서 삭제되고 DB 메타데이터는 안전하게 보존되는지 확인.
+4. `.\scripts\rehearse_golden_path.ps1`을 가동하여 v1.5 뼈대 추가 상태에서도 e2e 루프가 온전히 동작하는지 최종 확인.
