@@ -97,6 +97,9 @@ Start with:
 python -m pytest
 ```
 
+And review:
+- [TODO List](file:///C:/Users/user2/.gemini/antigravity/scratch/ai-game-company-server/docs/TODO_LIST.md) for current tasks and priorities.
+
 If remote is available:
 
 ```powershell
@@ -121,9 +124,8 @@ If remote is not available, keep working on:
 
 ## Current Priority
 
-The next v1 priority is Golden Path stabilization, not broad feature expansion.
-
-Target loop:
+Golden Path rehearsal has been successfully completed (2026-06-17).
+The rehearsal script (`scripts/rehearse_golden_path.ps1`) validates the full loop:
 
 ```text
 Project -> Epic -> Sub Epic -> Task -> worker lease -> task package
@@ -131,10 +133,20 @@ Project -> Epic -> Sub Epic -> Task -> worker lease -> task package
 -> worker report -> Owner merge review -> merge or retry
 ```
 
+Remaining Golden Path tasks:
+- README.md guide update with exact rehearsal commands.
+- Pygame Test Runner headless preset hardening (CI/CD environments).
+
+Next v1 priorities after Golden Path stabilization:
+- Large file streaming upload (currently 100 MiB limit, in-memory).
+- Discord bot real server integration testing.
+- Natural-language approval flow completion.
+
 See:
 
 - `docs/GOLDEN_PATH.md`
 - `docs/MCP_EXTENSION_PLAN.md`
+- `docs/TODO_LIST.md`
 
 Defer large MCP rollout, rich Discord natural-language operations, local GPU
 workers, vector memory, and web UI until the first demo project rehearsal proves

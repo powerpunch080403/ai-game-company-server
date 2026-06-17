@@ -9,3 +9,5 @@ owner-runs/
 game-workspace/
 .env
 config/machines.json
+rehearsal/
+artifacts/

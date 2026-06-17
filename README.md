@@ -19,7 +19,10 @@ design. Do not put real secrets in this repository.
 
 ## Current Status
 
-Estimated v1 completion: about 80%.
+Estimated v1 completion: about 85%.
+
+**2026-06-17**: Golden Path rehearsal script completed successfully — the full
+loop (scaffold → seed → server → worker → test → artifact → merge) is validated.
 
 Implemented:
 
@@ -340,6 +343,54 @@ metadata for future non-game projects. `game-pygame-mini` includes a tiny
 standard-library smoke loop so Golden Path rehearsal can run before installing
 Pygame for the interactive window.
 
+## Golden Path Rehearsal
+
+The Golden Path rehearsal validates the complete v1 loop end-to-end using the
+`game-pygame-mini` scaffold. It creates an isolated environment with its own
+bare repository, dev/test workspaces, SQLite database, and FastAPI server.
+
+Run the rehearsal:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\rehearse_golden_path.ps1
+```
+
+What the script does (13 steps):
+
+1. Cleans up and creates `rehearsal/` directory.
+2. Initializes a bare Git repository (`rehearsal/demo-game.git`).
+3. Scaffolds `game-pygame-mini` template and pushes to the bare repo.
+4. Clones dev and test workspaces from the bare repo.
+5. Seeds the database with a project, epic, sub-epic, and task.
+6. Creates a worker modification script (changes player speed 220→250).
+7. Starts FastAPI server on port 8082.
+8. Runs Workspace Worker: leases task, modifies code, commits, pushes to `worker/*` branch.
+9. Runs Test Runner: fetches worker branch, runs build/test/smoke phases.
+10. Locates and validates the test runner report.
+11. Registers artifact metadata and uploads report content.
+12. Checks merge candidates and triggers Owner merge.
+13. Verifies the merge commit in the bare repo's git history.
+
+Expected final output:
+
+```text
+==================================================
+GOLDEN PATH REHEARSAL COMPLETED SUCCESSFULLY!
+==================================================
+
+What was validated:
+  [OK] Project scaffold (game-pygame-mini)
+  [OK] Database seeding (project, epic, sub-epic, task)
+  [OK] FastAPI server startup and health check
+  [OK] Workspace Worker: lease, modify, commit, push
+  [OK] Test Runner: build, test, smoke phases
+  [OK] Artifact: register metadata and upload content
+  [OK] Owner merge: worker branch merged into main
+```
+
+After a successful run, the `rehearsal/` directory contains all intermediate
+files for inspection. Delete it with `Remove-Item -Recurse -Force .\rehearsal`.
+
 ## Owner Run
 
 Create an Owner dry-run:
@@ -609,11 +660,13 @@ without relying on remote SSH.
 
 Recommended next steps:
 
-1. Stabilize the Golden Path against a separate demo game repo.
-2. Add a minimal Pygame Test Runner preset for the demo game.
-3. Rehearse worker branch, commit, report, artifact upload, Owner review, and
-   merge or retry.
-4. Document the exact rehearsal commands in README.
-5. Keep Discord at setup/status/approval level until the loop is stable.
-6. Add artifact streaming upload.
-7. Add systemd unit files after always-on mode is approved.
+1. ~~Stabilize the Golden Path against a separate demo game repo.~~ ✅ Done.
+2. ~~Add a minimal Pygame Test Runner preset for the demo game.~~ ✅ Done.
+3. ~~Rehearse worker branch, commit, report, artifact upload, Owner review, and
+   merge or retry.~~ ✅ Done.
+4. ~~Document the exact rehearsal commands in README.~~ ✅ Done.
+5. Harden Pygame Test Runner for headless CI/CD environments.
+6. Keep Discord at setup/status/approval level until the loop is stable.
+7. Add artifact streaming upload.
+8. Add systemd unit files after always-on mode is approved.
+9. See `docs/TODO_LIST.md` for the complete priority list.

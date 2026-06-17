@@ -18,9 +18,20 @@ load_dotenv()
 
 
 def git_status_files(workspace: Path) -> list[str]:
-    output = run_git(["status", "--porcelain", "--untracked-files=all"], cwd=workspace)
+    # Use subprocess directly instead of run_git because run_git strips
+    # leading whitespace from stdout. The porcelain format uses leading
+    # spaces as part of the XY status code (e.g. " M src/file.py"), so
+    # stripping them corrupts the filename extracted by line[3:].
+    completed = subprocess.run(
+        [git_executable(), "status", "--porcelain", "--untracked-files=all"],
+        cwd=workspace,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.DEVNULL,
+        check=False,
+    )
     files: list[str] = []
-    for line in output.splitlines():
+    for line in completed.stdout.splitlines():
         if not line:
             continue
         files.append(line[3:].strip())
