@@ -54,7 +54,7 @@ Do not rely on the remote being available. If the main computer is down, continu
 - Worker registry `last_seen_at` updates from task lease, claim, and report
 - Artifact metadata, raw upload, and raw download APIs (Large file streaming upload implemented)
 - Approval/Decision request and decision APIs
-- Discord Gateway natural-language approval decision routing (2026-06-17 완료)
+- Discord Gateway natural-language approval decision routing (2026-06-17 Completed)
 - Golden Path API evidence loop test
 - `game-pygame-mini` project scaffold and Test Runner preset
 - DB backup script
@@ -132,9 +132,9 @@ Project -> Epic -> Sub Epic -> Task -> worker lease -> task package
 ```
 
 Remaining Golden Path tasks:
-- [x] README.md guide update with exact rehearsal commands. (2026-06-17 완료)
-- [x] Pygame Test Runner headless preset hardening (CI/CD environments). (2026-06-17 완료)
-- [x] Create initial Unity skeleton task lease, execute, and merge loop. (2026-06-17 완료)
+- [x] README.md guide update with exact rehearsal commands. (2026-06-17 Completed)
+- [x] Pygame Test Runner headless preset hardening (CI/CD environments). (2026-06-17 Completed)
+- [x] Create initial Unity skeleton task lease, execute, and merge loop. (2026-06-17 Completed)
 
 Next v1 priorities after Golden Path stabilization:
 - Discord bot real server integration testing (currently connected to gateway, needs channel mapping and commands setup).
