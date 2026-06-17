@@ -66,20 +66,34 @@ async def upload_artifact_content(
             raise HTTPException(status_code=400, detail="invalid content-length header") from exc
         if declared_size > config.max_artifact_upload_bytes:
             raise HTTPException(status_code=413, detail="artifact upload exceeds configured size limit")
-    body = await request.body()
-    if len(body) > config.max_artifact_upload_bytes:
-        raise HTTPException(status_code=413, detail="artifact upload exceeds configured size limit")
     safe_name = safe_artifact_filename(filename or artifact.get("filename") or artifact_id)
     relative_path = artifact_relative_dir(artifact) / safe_name
     target_path = config.artifact_root / relative_path
     target_path.parent.mkdir(parents=True, exist_ok=True)
-    target_path.write_bytes(body)
+
+    total_bytes = 0
+    try:
+        with open(target_path, "wb") as f:
+            async for chunk in request.stream():
+                total_bytes += len(chunk)
+                if total_bytes > config.max_artifact_upload_bytes:
+                    raise HTTPException(status_code=413, detail="artifact upload exceeds configured size limit")
+                f.write(chunk)
+    except HTTPException:
+        if target_path.exists():
+            target_path.unlink()
+        raise
+    except Exception as exc:
+        if target_path.exists():
+            target_path.unlink()
+        raise HTTPException(status_code=500, detail=f"streaming upload failed: {exc}")
+
     return repo.attach_artifact_file(
         artifact_id,
         relative_path.as_posix(),
         safe_name,
         content_type,
-        len(body),
+        total_bytes,
     )
 
 
