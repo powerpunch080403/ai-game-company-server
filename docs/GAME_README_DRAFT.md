@@ -61,14 +61,26 @@ SDL_VIDEODRIVER=dummy python scripts/smoke_check.py
 
 ---
 
-## 🎯 개발 목표 & 포트폴리오 설명
+## 🏗️ Built with AI Game Company Server
 
-### AI Game Company Server의 증적
-본 게임은 다음과 같은 AI 자율 개발 프로세스 하에 개발되었습니다:
-1. **정형화된 태스크 팩 바인딩**: Owner 에이전트가 `pygame_survival_v1.json` 규격에 의거하여 명확한 요구사항과 성공 기준(Success Criteria)을 가진 작업들을 발행.
-2. **독립적 브랜치 작업**: Worker 에이전트들이 분리된 `worker/*` 개발 브랜치를 임대(Lease)받아 독립적으로 개발 진행.
-3. **헤드리스 품질 검증**: Merge가 요청되면 Test Runner가 headless 모드로 단위 테스트 및 스모크 테스트 실행 증적(`test.log`, `screenshot.png`)을 수집.
-4. **결재 정책에 따른 병합**: Merge Policy 모듈이 모든 아티팩트와 성공 로그 존재 여부를 판단하여 검증 완료된 코드 브랜치만 `main`에 안전하게 병합 처리.
+이 프로젝트는 단순히 코드를 실행하는 게임이 아니라, **AI Game Company Server의 수많은 보안 가드와 파이프라인 정책을 완전히 통과했음을 증명하는 E2E 검증 결과물**입니다. 개발 시 다음 핵심 서버 기능들이 유기적으로 활용되고 테스트되었습니다:
+
+1. **에픽 및 작업 계층 관리 (Hierarchy Management)**:
+   * 전체 게임 구조가 `Project -> Epic -> SubEpic -> Task` 구조에 맵핑되어 데이터베이스에 사전 등록되고 관리되었습니다.
+2. **에이전트 작업 유효성 검사 (Owner Task Planning Validator)**:
+   * 작업 배포 전 `goal`, `role`, `branch`, `estimated_minutes` 및 필수 제출 증적(evidence) 목록이 올바른지 사전 검증을 통과했습니다.
+3. **가두리 격리 브랜치 개발 (Workspace Worker Branch Flow)**:
+   * 작업자들이 메인 브랜치를 직접 건드리지 않고, Lease 받은 `worker/*` 개발 격리 브랜치에서 단위 커밋과 푸시를 통해서만 코드를 기여하도록 강제되었습니다.
+4. **품질 검증 테스트 러너 (Test Runner Validation)**:
+   * `.game-company/test_runner.json` 설정 파일에 기반해 가상 환경 setup, pytest를 사용한 test, 그리고 dummy video driver 기반의 headless smoke 테스트 단계를 순차 완수했습니다.
+5. **엄격한 병합 차단 정책 (Merge Review Policy)**:
+   * 일부러 테스트를 실패시키거나 증적 로그를 누락시킨 브랜치(`worker/merge-policy-challenge`)를 제출하여, 서버의 `eval_merge_policy`가 이를 감지하고 안전하게 병합을 차단·반려(Block)하는 오작동 복원력이 테스트되었습니다.
+6. **디스코드 자연어 승인 결재 (Discord Natural-Language Approval)**:
+   * 릴리즈 후보(RC) 브랜치 병합 시, 디스코드 채널로 결재 알림을 보내고 사용자의 한국어 의사결정("좋아 진행해", "승인")을 해석하여 자동으로 최종 병합을 처리하는 흐름을 검증했습니다.
+7. **아티팩트 분류 및 보존 주기 제어 (Artifact Cleanup & Safety Guard)**:
+   * 스크린샷 및 로그를 스트리밍하여 서버에 안전하게 보존하고, `release_or_milestone=1` 지정 아티팩트는 삭제에서 제외시키는 안전한 아티팩트 정리 주기(`cleanup_artifacts.py`)를 가동했습니다.
+8. **컨텍스트 연속성 보존 (Memory Refs & History Summaries)**:
+   * 작업 시 이전 태스크들의 개발 기록 요약본과 `project_rules`, `coding_rules` 기억 지시자가 콘텍스트에 바인딩되어 모델의 추론 일관성을 유지했습니다.
 
 ---
 

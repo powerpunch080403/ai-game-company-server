@@ -1,4 +1,4 @@
-# First Portfolio Game Seed Draft: Neon Survival Prototype
+# First Portfolio Game Seed Draft: Neon Survival Prototype & Verification Harness
 
 이 문서는 AI Game Company Server 데이터베이스에 등록할 프로젝트, 에픽, 서브에픽 및 작업(Task)들의 초기 Seed 데이터 초안입니다. 실제 데이터베이스에 실행 등록되지는 않으며, Codex CLI 사용 제한이 해제되는 대로 시드 스크립트 작성에 바로 사용할 수 있도록 정형화된 JSON 명세 구조를 갖추고 있습니다.
 
@@ -8,10 +8,11 @@
 
 ```mermaid
 graph TD
-    Project["Project: Neon Survival Prototype"] --> Epic["Epic: Core Gameplay System"]
+    Project["Project: Neon Survival Prototype"] --> Epic["Epic: Core Gameplay System & Server Verification"]
     Epic --> SubEpic["Sub-Epic: Initialization & Input (Tasks 1-3)"]
     Epic --> SubEpic2["Sub-Epic: Simulation & Collisions (Tasks 4-5)"]
-    Epic --> SubEpic3["Sub-Epic: UI & Game Loop Polish (Tasks 6-9)"]
+    Epic --> SubEpic3["Sub-Epic: UI & Game Loop Polish (Tasks 6-8)"]
+    Epic --> SubEpic4["Sub-Epic: Server Guard Rules Verification (Tasks 9-11)"]
     
     SubEpic --> Task1["Task 1: Project Bootstrap"]
     SubEpic --> Task2["Task 2: Basic Game Loop"]
@@ -23,7 +24,10 @@ graph TD
     SubEpic3 --> Task6["Task 6: Score & Time UI"]
     SubEpic3 --> Task7["Task 7: Game Over & Restart"]
     SubEpic3 --> Task8["Task 8: Smoke Test Artifact"]
-    SubEpic3 --> Task9["Task 9: Portfolio README"]
+    
+    SubEpic4 --> Task9["Task 9: Merge Policy Challenge"]
+    SubEpic4 --> Task10["Task 10: Approval / Release Candidate"]
+    SubEpic4 --> Task11["Task 11: Artifact Cleanup / MCP Permission Dry-run"]
 ```
 
 ---
@@ -36,7 +40,7 @@ graph TD
 {
   "project": {
     "name": "Neon Survival Prototype",
-    "description": "2D neon-style top-down survival game developed using Pygame-ce where player survives for 60 seconds avoiding incoming red obstacles.",
+    "description": "2D neon-style top-down survival game developed using Pygame-ce. Functions as a dual portfolio showcase and E2E verification harness for all AI Game Company Server safeguards.",
     "engine": "pygame",
     "repo_url": "https://github.com/powerpunch080403/neon-survival-prototype.git",
     "workspace_path": "C:\\Users\\user2\\.gemini\\antigravity\\scratch\\neon-survival-workspace",
@@ -44,25 +48,30 @@ graph TD
   },
   "epics": [
     {
-      "name": "Core Gameplay System",
-      "description": "Establish basic controls, simulation components, GUI status display, and smoke testing for the 60-second survival prototype."
+      "name": "Core Gameplay System & Server Verification",
+      "description": "Establish controls, simulation components, GUI status display, and verify server-side policies (Merge guards, Discord gateway approvals, cleanup script, and MCP guards)."
     }
   ],
   "sub_epics": [
     {
-      "epic_name": "Core Gameplay System",
+      "epic_name": "Core Gameplay System & Server Verification",
       "name": "Initialization & Input",
       "description": "Setup project structures, standard game loops, and WASD control inputs."
     },
     {
-      "epic_name": "Core Gameplay System",
+      "epic_name": "Core Gameplay System & Server Verification",
       "name": "Simulation & Collisions",
-      "description": "Setup dynamic enemy spawns and collision damage equations."
+      "description": "Setup enemy spawns and collision damage equations."
     },
     {
-      "epic_name": "Core Gameplay System",
+      "epic_name": "Core Gameplay System & Server Verification",
       "name": "UI & Game Loop Polish",
-      "description": "Setup user dashboard hud overlays, restart/reset transitions, and validation artifacts."
+      "description": "Setup UI HUD status displays and automatic smoke testing."
+    },
+    {
+      "epic_name": "Core Gameplay System & Server Verification",
+      "name": "Server Guard Rules Verification",
+      "description": "Verify Merge Policy barriers, Discord natural language approvals, and safety dry-runs."
     }
   ],
   "tasks": [
@@ -224,19 +233,62 @@ graph TD
       "memory_refs": ["project_rules", "project_knowledge"]
     },
     {
-      "sub_epic_name": "UI & Game Loop Polish",
-      "goal": "Update the project README with instructions on how to build, run, and test the game.",
+      "sub_epic_name": "Server Guard Rules Verification",
+      "goal": "Deliberately violate the Merge Review Policy to verify that invalid changes are blocked.",
       "role": "code_worker",
-      "branch": "worker/readme-update",
-      "estimated_minutes": 15,
+      "branch": "worker/merge-policy-challenge",
+      "estimated_minutes": 20,
       "requirements": [
-        "1. Edit root README.md file.",
-        "2. Add sections detailing game description, controls, prerequisites, launch execution command, test instructions, and portfolio context."
+        "1. Write a failing test in tests/test_player.py, OR modify main.py to raise an exception on start, OR omit uploading the required unit test log evidence.",
+        "2. Trigger a lease submit/merge request to the server.",
+        "3. Confirm that the server's 'eval_merge_policy' triggers a block/fail response."
       ],
       "success_criteria": [
-        "README.md contains all requested documentation blocks."
+        "The merge request is rejected by the server.",
+        "The reason indicates validation failures or missing evidence files."
       ],
-      "evidence_required": "Git diff reports.",
+      "evidence_required": "Server response status showing rejected merge for branch worker/merge-policy-challenge.",
+      "memory_refs": ["coding_rules"]
+    },
+    {
+      "sub_epic_name": "Server Guard Rules Verification",
+      "goal": "Trigger Discord natural language approval flows and upload critical release artifacts.",
+      "role": "code_worker",
+      "branch": "worker/release-candidate",
+      "estimated_minutes": 30,
+      "requirements": [
+        "1. Create the final codebase ensuring all test cases pass perfectly.",
+        "2. Submit the merge request, registering it as a Release Candidate approval request.",
+        "3. Wait for the server to ping Discord channel #approval-inbox.",
+        "4. Respond on Discord with positive natural language like '승인합니다' or '좋아 진행해'.",
+        "5. Verify that the Discord gateway processes this response, updates DB approval record to 'approved', and successfully merges the code.",
+        "6. Upload the final build artifact marked with important=1 and release_or_milestone=1."
+      ],
+      "success_criteria": [
+        "The task is merged into main via Discord natural language approval.",
+        "Artifact metadata database entries show important=1 and release_or_milestone=1."
+      ],
+      "evidence_required": "Discord Gateway log output and SQLite artifact metadata records.",
+      "memory_refs": ["project_rules"]
+    },
+    {
+      "sub_epic_name": "Server Guard Rules Verification",
+      "goal": "Run dry-run checks on the workspace artifacts cleanup tool and MCP security guard rails.",
+      "role": "code_worker",
+      "branch": "worker/cleanup-mcp-dry-run",
+      "estimated_minutes": 25,
+      "requirements": [
+        "1. Run 'python scripts/cleanup_artifacts.py' targeting the workspace folder in dry-run mode.",
+        "2. Confirm that only expired, non-important files are listed as delete candidates, while critical release artifacts are untouched.",
+        "3. Call validate_mcp_call() using filesystem config to verify attempts to access outside allowed roots or accessing '.env' are blocked.",
+        "4. Confirm that SQL database entries are not deleted."
+      ],
+      "success_criteria": [
+        "The cleanup script executes in dry-run mode without deleting any files.",
+        "The console output lists correct expired logs but skips release files.",
+        "MCP path confinement triggers 'is_allowed=False' for unauthorized files."
+      ],
+      "evidence_required": "Command execution stdout console logs.",
       "memory_refs": ["project_rules"]
     }
   ]
