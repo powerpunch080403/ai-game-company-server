@@ -1,5 +1,10 @@
 # AI Game Company Server v1
 
+## Languages
+
+- English: this README
+- Korean: [docs/README.ko.md](docs/README.ko.md)
+
 AI Game Company Server is a control server for running an AI-assisted software
 development workflow. The first target is game development, but the v1 design
 also supports app, web, backend, tool, automation, and plugin projects.
