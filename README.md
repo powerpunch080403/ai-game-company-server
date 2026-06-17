@@ -683,7 +683,7 @@ Recommended next steps:
 
 ## License
 
-Copyright (c) 2026 Seungmin Im.
+Copyright (c) 2026 yeongha SON.
 
 This repository is currently published for portfolio, review, and collaboration discussion purposes.
 No open-source license has been granted yet. Unless a separate license is explicitly provided, all rights are reserved.

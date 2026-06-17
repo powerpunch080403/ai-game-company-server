@@ -13,7 +13,7 @@ website relevant to your country of residence.
 |---|---|
 | **Work title** | AI Game Company Server v1 |
 | **Work type** | Computer program / software |
-| **Author** | Seungmin Im |
+| **Author** | yeongha SON |
 | **Repository URL** | https://github.com/powerpunch080403/ai-game-company-server |
 | **First publication** | 2026 (publicly visible on GitHub) |
 
@@ -80,7 +80,7 @@ Then create a GitHub Release from this tag through the GitHub UI or GitHub CLI.
 ## Official Registration Note
 
 > [!NOTE]
-> Official copyright registration must be completed by the **owner (Seungmin Im)** through
+> Official copyright registration must be completed by the **owner (yeongha SON)** through
 > the relevant government or official registration body for your country.
 >
 > This document is a preparation guide only. Requirements, fees, accepted formats, and

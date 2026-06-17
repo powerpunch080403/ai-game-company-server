@@ -666,7 +666,7 @@ curl -X POST http://localhost:8080/approvals/repo-setup-1/decision \
 
 ## 라이선스 및 저작권
 
-Copyright (c) 2026 Seungmin Im.
+Copyright (c) 2026 yeongha SON.
 
 이 저장소는 현재 포트폴리오, 검토, 협업 논의를 위해 공개되어 있습니다.
 아직 별도의 오픈소스 라이선스는 부여되지 않았습니다. 별도의 라이선스가 명시적으로 제공되기 전까지 모든 권리는 저작권자에게 있습니다.
