@@ -54,6 +54,7 @@ Do not rely on the remote being available. If the main computer is down, continu
 - Worker registry `last_seen_at` updates from task lease, claim, and report
 - Artifact metadata, raw upload, and raw download APIs (Large file streaming upload implemented)
 - Approval/Decision request and decision APIs
+- Discord Gateway natural-language approval decision routing (2026-06-17 완료)
 - Golden Path API evidence loop test
 - `game-pygame-mini` project scaffold and Test Runner preset
 - DB backup script
@@ -137,7 +138,6 @@ Remaining Golden Path tasks:
 
 Next v1 priorities after Golden Path stabilization:
 - Discord bot real server integration testing (currently connected to gateway, needs channel mapping and commands setup).
-- Natural-language approval flow completion.
 
 See:
 
