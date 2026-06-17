@@ -1223,3 +1223,48 @@ def test_owner_task_merge_api_reviews_and_merges_successful_task(client: TestCli
 
     duplicate_merge = client.post(f"/owner/tasks/{task['id']}/merge", json={"dry_run": False, "push": True})
     assert duplicate_merge.status_code == 409
+
+
+def test_multi_node_branch_naming(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
+    # 1. Create a task
+    task_payload = {
+        "role": "code_worker",
+        "goal": "Test branch naming",
+        "requirements": ["Do something"],
+        "success_criteria": ["Done"],
+        "estimated_minutes": 15,
+        "memory_refs": [],
+        "branch": "worker/branch-slug",
+    }
+    task = client.post("/tasks", json=task_payload).json()
+    task_id = task["id"]
+    assert task["branch"] == "worker/branch-slug"
+
+    # 2. Lease with default/empty node_id (should preserve original branch naming)
+    leased = client.post("/workers/node-a/lease", json={"role": "code_worker", "lease_minutes": 30}).json()
+    assert leased["id"] == task_id
+    assert leased["branch"] == "worker/branch-slug"
+
+    # Complete/release task to lease it again with non-empty node_id
+    client.post(f"/owner/tasks/{task_id}/release", json={})
+
+    # 3. Lease with configured node_id (should dynamically update branch)
+    monkeypatch.setenv("GAME_COMPANY_NODE_ID", "main_node")
+    leased_with_node = client.post("/workers/node-b/lease", json={"role": "code_worker", "lease_minutes": 30}).json()
+    assert leased_with_node["id"] == task_id
+    # Branch naming should be: worker/{worker_id}/{task_id}-{slug}
+    # Here worker_id = "node-b", task_id = task_id, slug = "branch-slug"
+    assert leased_with_node["branch"] == f"worker/node-b/{task_id}-branch-slug"
+
+    # Release task again to test claim
+    client.post(f"/owner/tasks/{task_id}/release", json={})
+
+    # 4. Claim with configured node_id (should dynamically update branch)
+    # Reset env/monkeypatch first to verify empty preserves it on claim
+    monkeypatch.delenv("GAME_COMPANY_NODE_ID", raising=False)
+    # Re-fetch task to check branch
+    task_before_claim = client.get(f"/tasks/{task_id}").json()
+    # Now set GAME_COMPANY_NODE_ID again
+    monkeypatch.setenv("GAME_COMPANY_NODE_ID", "main_node")
+    claimed = client.post(f"/workers/node-c/tasks/{task_id}/claim", json={"lease_minutes": 30}).json()
+    assert claimed["branch"] == f"worker/node-c/{task_id}-branch-slug"

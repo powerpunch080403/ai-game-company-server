@@ -29,6 +29,8 @@ class Settings:
     context_compact_threshold_tokens: int
     context_warning_tokens: int
     context_chars_per_token: float
+    node_id: str = ""
+    node_mode: str = "authority"
 
 
 def load_settings() -> Settings:
@@ -51,4 +53,6 @@ def load_settings() -> Settings:
         context_compact_threshold_tokens=int(os.getenv("GAME_COMPANY_CONTEXT_COMPACT_THRESHOLD_TOKENS", "260000")),
         context_warning_tokens=int(os.getenv("GAME_COMPANY_CONTEXT_WARNING_TOKENS", "220000")),
         context_chars_per_token=float(os.getenv("GAME_COMPANY_CONTEXT_CHARS_PER_TOKEN", "3.5")),
+        node_id=os.getenv("GAME_COMPANY_NODE_ID", ""),
+        node_mode=os.getenv("GAME_COMPANY_NODE_MODE", "authority"),
     )

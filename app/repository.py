@@ -1198,6 +1198,20 @@ class Repository:
             if row is None:
                 return None
             task_id = int(row["id"])
+            original_branch = row["branch"]
+            from app.config import load_settings
+            cfg = load_settings()
+            updated_branch = original_branch
+            if cfg.node_id:
+                parts = original_branch.split("/")
+                last_part = parts[-1]
+                prefix = f"{task_id}-"
+                if last_part.startswith(prefix):
+                    slug = last_part.removeprefix(prefix)
+                else:
+                    slug = last_part
+                updated_branch = f"worker/{worker_id}/{task_id}-{slug}"
+
             self.conn.execute(
                 """
                 UPDATE tasks
@@ -1205,10 +1219,11 @@ class Repository:
                     leased_by = ?,
                     leased_until = ?,
                     started_at = COALESCE(started_at, ?),
-                    updated_at = ?
+                    updated_at = ?,
+                    branch = ?
                 WHERE id = ?
                 """,
-                (worker_id, lease_until, timestamp, timestamp, task_id),
+                (worker_id, lease_until, timestamp, timestamp, updated_branch, task_id),
             )
             self._add_task_event(task_id, "leased", f"Leased by {worker_id}")
             self._touch_worker(worker_id, role=role, status="busy")
@@ -1233,6 +1248,20 @@ class Repository:
                 and task["leased_until"] >= timestamp
             ):
                 raise ValueError("task is already leased by another worker")
+            original_branch = task["branch"]
+            from app.config import load_settings
+            cfg = load_settings()
+            updated_branch = original_branch
+            if cfg.node_id:
+                parts = original_branch.split("/")
+                last_part = parts[-1]
+                prefix = f"{task_id}-"
+                if last_part.startswith(prefix):
+                    slug = last_part.removeprefix(prefix)
+                else:
+                    slug = last_part
+                updated_branch = f"worker/{worker_id}/{task_id}-{slug}"
+
             self.conn.execute(
                 """
                 UPDATE tasks
@@ -1240,10 +1269,11 @@ class Repository:
                     leased_by = ?,
                     leased_until = ?,
                     started_at = COALESCE(started_at, ?),
-                    updated_at = ?
+                    updated_at = ?,
+                    branch = ?
                 WHERE id = ?
                 """,
-                (worker_id, lease_until, timestamp, timestamp, task_id),
+                (worker_id, lease_until, timestamp, timestamp, updated_branch, task_id),
             )
             self._add_task_event(task_id, "leased", f"Leased by {worker_id}")
             self._touch_worker(worker_id, role=task["role"], status="busy")
