@@ -3,7 +3,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import os
-from dataclasses import asdict
+from dataclasses import asdict, replace
 from typing import Any
 
 from dotenv import load_dotenv
@@ -18,6 +18,7 @@ from app.discord_bot import (
     context_status_payload,
     route_discord_message,
     select_mapping,
+    parse_approval_decision,
 )
 
 load_dotenv()
@@ -80,6 +81,30 @@ def handle_gateway_message(
     action = attach_owner_run_payload(action, context, mapping, dry_run=not execute_owner_run)
     if submit_owner_run and action.owner_run_payload:
         action = attach_owner_run_result(action, api.create_owner_run(action.owner_run_payload))
+
+    if action.needs_approval and mapping:
+        project_id = mapping.get("project_id")
+        if project_id is not None:
+            try:
+                approvals = api.list_approvals(status="pending", project_id=project_id)
+                if not approvals:
+                    action = replace(action, approval_result={"error": "no_pending_approvals"})
+                else:
+                    target_approval = approvals[0]
+                    decision_status = parse_approval_decision(context.content)
+                    if not decision_status:
+                        action = replace(action, approval_result={"error": "ambiguous_decision", "target": target_approval})
+                    else:
+                        decision_payload = {
+                            "status": decision_status,
+                            "approved_by": context.author_id or "discord_user",
+                            "approval_message": context.content,
+                        }
+                        result = api.decide_approval(target_approval["approval_id"], decision_payload)
+                        action = replace(action, approval_result={"success": True, "result": result})
+            except Exception as exc:
+                action = replace(action, approval_result={"error": f"api_failed: {exc}"})
+
     return action
 
 
@@ -104,7 +129,25 @@ def format_gateway_reply(action: DiscordBotAction) -> str | None:
     if action.action_type == "context_status_check":
         return format_context_status(action.context_status) or "Context status is unavailable."
     if action.needs_approval:
-        return "Approval message received. Approval decision handling is the next runtime step."
+        if not action.approval_result:
+            return "Approval message received. Decision handling failed or was not executed."
+        res_data = action.approval_result
+        if "error" in res_data:
+            err = res_data["error"]
+            if err == "no_pending_approvals":
+                return "현재 대기 중인 승인 요청이 없습니다."
+            elif err == "ambiguous_decision":
+                target = res_data["target"]
+                req_summary = target.get("request_summary", "요청")
+                return f"결재 요청 '{req_summary}'에 대한 승인 여부를 명확히 판단할 수 없습니다. '승인' 또는 '거절'을 포함하여 명확하게 답변해 주세요."
+            else:
+                return f"결재 처리 중 오류가 발생했습니다: {err}"
+        if res_data.get("success"):
+            res = res_data["result"]
+            status = res.get("status", "unknown")
+            req_summary = res.get("request_summary", "요청")
+            status_kor = "승인" if status == "approved" else "거절(반려)"
+            return f"결재 건 #{res.get('approval_id')} '{req_summary}'이(가) 성공적으로 {status_kor} 처리되었습니다."
     if action.needs_owner:
         if action.owner_run_result:
             run_id = action.owner_run_result.get("id", "?")

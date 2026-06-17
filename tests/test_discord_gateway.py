@@ -27,10 +27,12 @@ class FakeChannel:
 
 
 class FakeApi:
-    def __init__(self, mappings: list[dict]):
+    def __init__(self, mappings: list[dict], pending_approvals: list[dict] | None = None):
         self.mappings = mappings
+        self.pending_approvals = pending_approvals if pending_approvals is not None else []
         self.context_payloads: list[tuple[str, dict]] = []
         self.owner_payloads: list[dict] = []
+        self.decided_payloads: list[tuple[str, dict]] = []
 
     def list_discord_mappings(self, context):
         return self.mappings
@@ -47,6 +49,18 @@ class FakeApi:
     def create_owner_run(self, payload: dict):
         self.owner_payloads.append(payload)
         return {"id": 9, "status": "dry_run"}
+
+    def list_approvals(self, status=None, project_id=None, target_type=None):
+        return self.pending_approvals
+
+    def decide_approval(self, approval_id: str, payload: dict):
+        self.decided_payloads.append((approval_id, payload))
+        return {
+            "approval_id": approval_id,
+            "status": payload.get("status"),
+            "request_summary": "Test private repo creation",
+            "approved_by": payload.get("approved_by"),
+        }
 
 
 def fake_message(content: str, channel: FakeChannel | None = None, bot: bool = False):
@@ -161,3 +175,122 @@ def test_handle_discord_message_sends_reply() -> None:
 
     assert action.action_type == "context_status_check"
     assert channel.sent == ["Context: ok (1200/260000 estimated tokens)."]
+
+
+def test_handle_gateway_message_routes_approval_and_decides_approved() -> None:
+    api = FakeApi(
+        mappings=[
+            {
+                "mapping_id": "mapping-approval",
+                "discord_guild_id": "guild-1",
+                "discord_channel_id": "channel-approval",
+                "discord_thread_id": "",
+                "conversation_kind": "approval_inbox",
+                "thread_role": "decisions",
+                "project_id": 3,
+                "archived_at": None,
+            }
+        ],
+        pending_approvals=[
+            {
+                "approval_id": "approval-001",
+                "project_id": 3,
+                "status": "pending",
+                "request_summary": "Test private repo creation",
+            }
+        ]
+    )
+
+    action = handle_gateway_message(
+        discord_message_to_context(fake_message("좋아 진행해", FakeChannel("channel-approval"))),
+        api,
+    )
+
+    assert action.action_type == "approval_conversation"
+    assert action.needs_approval is True
+    assert action.approval_result["success"] is True
+    assert action.approval_result["result"]["status"] == "approved"
+    assert api.decided_payloads[0] == (
+        "approval-001",
+        {
+            "status": "approved",
+            "approved_by": "user-1",
+            "approval_message": "좋아 진행해",
+        }
+    )
+
+    reply = format_gateway_reply(action)
+    assert "성공적으로 승인 처리되었습니다." in reply
+
+
+def test_handle_gateway_message_routes_approval_and_decides_rejected() -> None:
+    api = FakeApi(
+        mappings=[
+            {
+                "mapping_id": "mapping-approval",
+                "discord_guild_id": "guild-1",
+                "discord_channel_id": "channel-approval",
+                "discord_thread_id": "",
+                "conversation_kind": "approval_inbox",
+                "thread_role": "decisions",
+                "project_id": 3,
+                "archived_at": None,
+            }
+        ],
+        pending_approvals=[
+            {
+                "approval_id": "approval-001",
+                "project_id": 3,
+                "status": "pending",
+                "request_summary": "Test private repo creation",
+            }
+        ]
+    )
+
+    action = handle_gateway_message(
+        discord_message_to_context(fake_message("거절해", FakeChannel("channel-approval"))),
+        api,
+    )
+
+    assert action.approval_result["success"] is True
+    assert action.approval_result["result"]["status"] == "rejected"
+    assert api.decided_payloads[0][1]["status"] == "rejected"
+
+    reply = format_gateway_reply(action)
+    assert "성공적으로 거절(반려) 처리되었습니다." in reply
+
+
+def test_handle_gateway_message_routes_approval_ambiguous() -> None:
+    api = FakeApi(
+        mappings=[
+            {
+                "mapping_id": "mapping-approval",
+                "discord_guild_id": "guild-1",
+                "discord_channel_id": "channel-approval",
+                "discord_thread_id": "",
+                "conversation_kind": "approval_inbox",
+                "thread_role": "decisions",
+                "project_id": 3,
+                "archived_at": None,
+            }
+        ],
+        pending_approvals=[
+            {
+                "approval_id": "approval-001",
+                "project_id": 3,
+                "status": "pending",
+                "request_summary": "Test private repo creation",
+            }
+        ]
+    )
+
+    action = handle_gateway_message(
+        discord_message_to_context(fake_message("글쎄 잘 모르겠네", FakeChannel("channel-approval"))),
+        api,
+    )
+
+    assert "error" in action.approval_result
+    assert action.approval_result["error"] == "ambiguous_decision"
+
+    reply = format_gateway_reply(action)
+    assert "명확히 판단할 수 없습니다." in reply

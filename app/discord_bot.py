@@ -34,6 +34,7 @@ class DiscordBotAction:
     owner_run_result: dict[str, Any] | None = None
     needs_owner: bool = False
     needs_approval: bool = False
+    approval_result: dict[str, Any] | None = None
 
 
 class GameCompanyApiClient:
@@ -81,6 +82,34 @@ class GameCompanyApiClient:
     def create_owner_run(self, payload: dict[str, Any]) -> dict[str, Any]:
         with httpx.Client(timeout=30) as client:
             response = client.post(f"{self.server}/owner/runs", json=payload, headers=self.headers())
+            response.raise_for_status()
+            return response.json()
+
+    def list_approvals(
+        self,
+        status: str | None = None,
+        project_id: int | None = None,
+        target_type: str | None = None,
+    ) -> list[dict[str, Any]]:
+        params = {}
+        if status:
+            params["status"] = status
+        if project_id is not None:
+            params["project_id"] = project_id
+        if target_type:
+            params["target_type"] = target_type
+        with httpx.Client(timeout=15) as client:
+            response = client.get(f"{self.server}/approvals", params=params, headers=self.headers())
+            response.raise_for_status()
+            return response.json()
+
+    def decide_approval(self, approval_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+        with httpx.Client(timeout=15) as client:
+            response = client.post(
+                f"{self.server}/approvals/{approval_id}/decision",
+                json=payload,
+                headers=self.headers(),
+            )
             response.raise_for_status()
             return response.json()
 
@@ -305,6 +334,20 @@ def route_discord_message(context: DiscordMessageContext, mapping: dict[str, Any
         thread_role=thread_role,
         mapping_id=mapping_id,
     )
+
+
+def parse_approval_decision(content: str) -> str | None:
+    approve_keywords = ["승인", "진행", "허용", "ok", "yes", "approve", "y", "좋아", "고", "go", "accept", "수락"]
+    reject_keywords = ["거절", "반려", "반대", "no", "reject", "cancel", "n", "안돼", "멈춰", "취소", "deny"]
+
+    cleaned = content.strip().lower()
+    for kw in reject_keywords:
+        if kw in cleaned:
+            return "rejected"
+    for kw in approve_keywords:
+        if kw in cleaned:
+            return "approved"
+    return None
 
 
 def parse_args() -> argparse.Namespace:
