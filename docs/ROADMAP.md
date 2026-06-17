@@ -2,7 +2,7 @@
 
 ## Current Status
 
-Estimated v1 completion: about 80%.
+Estimated v1 completion: about 90%+.
 
 The server can already run the core loop:
 
@@ -90,19 +90,17 @@ Most of this is already implemented.
    - Baseline contract documented in `docs/GOLDEN_PATH.md`.
    - API-level evidence loop test is implemented.
    - `game-pygame-mini` scaffold and Test Runner preset are implemented.
-   - Next: run the loop manually against a separate demo game repo.
-   - Next: add exact rehearsal commands to README after the manual run.
+   - Rehearsal loop validated manually and automated via `rehearse_golden_path.ps1` (2026-06-17 완료).
 
 2. Owner Task Planning
    - Baseline contract documented in `docs/OWNER_TASK_PLANNING.md`.
    - Owner prompt now follows the planning contract.
-   - Next: add optional local validation helper.
+   - Next: implement optional local validator utility.
 
 3. Security and Execution Control
    - Role-scoped tokens are implemented.
    - Worker command denylist and optional allowlist are implemented.
-   - Artifact upload size limit is implemented.
-   - Next: add true streaming upload for large artifacts.
+   - Artifact upload size limit and streaming upload are implemented (2026-06-17 완료).
    - FastAPI route modules are split out of `app/main.py`.
 
 4. Test Runner Contract
@@ -112,8 +110,6 @@ Most of this is already implemented.
    - Full test runner worker loop is implemented.
    - `.game-company/test_runner.json` is included in generated project templates.
    - Minimal Pygame preset for the Golden Path demo game is implemented.
-   - Next: add project-specific screenshot/runtime capture after the first
-     rehearsal proves the smoke loop.
 
 5. Game Project Template
    - Engine undecided.
@@ -156,8 +152,7 @@ Most of this is already implemented.
      mapping lookup, context-status replies, and optional safe Owner run
      submission.
    - Discord setup doctor and setup guide are implemented.
-   - Next: test the Gateway runtime in a real Discord server.
-   - Next: connect natural-language approval conversations.
+   - Discord Gateway natural-language approval routing is implemented (2026-06-17 완료).
 
 ## v1.5 Later
 
