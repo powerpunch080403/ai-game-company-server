@@ -14,7 +14,7 @@
 
 ## 2. 서버 기능 검증 매트릭스 (Server Verification Matrix)
 
-개발 과정 전반에 걸쳐 아래 서버 핵심 기능들이 자동으로 검증됩니다.
+개발 과정 전반에 걸쳐 아래 서버 핵심 기능들이 자동으로 검증됩니다. 상세한 검증 시나리오, 예상 결과, 실패 판단 및 승인 증적 기준은 [SERVER_FEATURE_VALIDATION_MATRIX.md](file:///C:/Users/user2/.gemini/antigravity/scratch/ai-game-company-server/docs/SERVER_FEATURE_VALIDATION_MATRIX.md)를 참조하십시오.
 
 | 검증 대상 서버 기능 | 실전 검증 시나리오 및 방법 | 관련 Task |
 | --- | --- | --- |

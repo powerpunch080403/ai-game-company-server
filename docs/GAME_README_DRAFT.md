@@ -63,7 +63,7 @@ SDL_VIDEODRIVER=dummy python scripts/smoke_check.py
 
 ## 🏗️ Built with AI Game Company Server
 
-이 프로젝트는 단순히 코드를 실행하는 게임이 아니라, **AI Game Company Server의 수많은 보안 가드와 파이프라인 정책을 완전히 통과했음을 증명하는 E2E 검증 결과물**입니다. 개발 시 다음 핵심 서버 기능들이 유기적으로 활용되고 테스트되었습니다:
+이 프로젝트는 단순히 코드를 실행하는 게임이 아니라, **AI Game Company Server의 수많은 보안 가드와 파이프라인 정책을 완전히 통과했음을 증명하는 E2E 검증 결과물**입니다. 상세한 검증 시나리오 및 통제 정책에 대한 세부 매트릭스는 [SERVER_FEATURE_VALIDATION_MATRIX.md](file:///C:/Users/user2/.gemini/antigravity/scratch/ai-game-company-server/docs/SERVER_FEATURE_VALIDATION_MATRIX.md)를 참고하십시오. 개발 시 다음 핵심 서버 기능들이 유기적으로 활용되고 테스트되었습니다:
 
 1. **에픽 및 작업 계층 관리 (Hierarchy Management)**:
    * 전체 게임 구조가 `Project -> Epic -> SubEpic -> Task` 구조에 맵핑되어 데이터베이스에 사전 등록되고 관리되었습니다.
