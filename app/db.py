@@ -253,6 +253,24 @@ ON discord_mappings(
     thread_role
 );
 CREATE INDEX IF NOT EXISTS idx_discord_mappings_project ON discord_mappings(project_id);
+
+CREATE TABLE IF NOT EXISTS task_locks (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    task_id INTEGER NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+    worker_id TEXT,
+    node_id TEXT,
+    lock_type TEXT NOT NULL,
+    resource_key TEXT NOT NULL,
+    mode TEXT NOT NULL,
+    status TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    released_at TEXT,
+    expires_at TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_task_locks_project_status ON task_locks(project_id, status);
+CREATE INDEX IF NOT EXISTS idx_task_locks_task ON task_locks(task_id);
 CREATE INDEX IF NOT EXISTS idx_discord_mappings_kind_role ON discord_mappings(conversation_kind, thread_role);
 """
 

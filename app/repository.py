@@ -162,9 +162,48 @@ def validate_changed_files_scope(
     return True, []
 
 
+def resource_keys_conflict(k1: str, k2: str) -> bool:
+    k1 = k1.replace("\\", "/")
+    k2 = k2.replace("\\", "/")
+    if k1 == k2:
+        return True
+    has_glob1 = any(c in k1 for c in ("*", "?", "["))
+    has_glob2 = any(c in k2 for c in ("*", "?", "["))
+    if has_glob1 and fnmatch.fnmatch(k2, k1):
+        return True
+    if has_glob2 and fnmatch.fnmatch(k1, k2):
+        return True
+    return False
+
+
 class Repository:
     def __init__(self, conn: sqlite3.Connection):
         self.conn = conn
+
+    def _has_lock_conflict(self, project_id: int, task_id: int, write_scope: list[str]) -> bool:
+        if not write_scope:
+            return False
+        rows = self.conn.execute(
+            "SELECT task_id, resource_key FROM task_locks WHERE project_id = ? AND status = 'active' AND task_id != ?",
+            (project_id, task_id)
+        ).fetchall()
+        for row in rows:
+            locked_key = row["resource_key"]
+            for scope_key in write_scope:
+                if resource_keys_conflict(scope_key, locked_key):
+                    return True
+        return False
+
+    def _release_task_locks(self, task_id: int, timestamp: str) -> None:
+        self.conn.execute(
+            """
+            UPDATE task_locks
+            SET status = 'released',
+                released_at = ?
+            WHERE task_id = ? AND status = 'active'
+            """,
+            (timestamp, task_id)
+        )
 
     def create_project(self, payload: ProjectCreate) -> dict[str, Any]:
         timestamp = now_iso()
@@ -1128,6 +1167,7 @@ class Repository:
             raise ValueError("pending task is already queued")
         timestamp = now_iso()
         with transaction(self.conn):
+            self._release_task_locks(task_id, timestamp)
             self.conn.execute(
                 """
                 UPDATE tasks
@@ -1155,6 +1195,7 @@ class Repository:
             raise ValueError("merged task cannot be canceled")
         timestamp = now_iso()
         with transaction(self.conn):
+            self._release_task_locks(task_id, timestamp)
             self.conn.execute(
                 """
                 UPDATE tasks
@@ -1179,6 +1220,7 @@ class Repository:
             raise ValueError("only running tasks can be released")
         timestamp = now_iso()
         with transaction(self.conn):
+            self._release_task_locks(task_id, timestamp)
             self.conn.execute(
                 """
                 UPDATE tasks
@@ -1260,7 +1302,7 @@ class Repository:
                   )
         """ if requires_project_config else ""
         with transaction(self.conn):
-            row = self.conn.execute(
+            rows = self.conn.execute(
                 f"""
                 SELECT * FROM tasks
                 WHERE role = ?
@@ -1270,14 +1312,29 @@ class Repository:
                   )
                   {project_config_filter}
                 ORDER BY id ASC
-                LIMIT 1
                 """,
                 (role, timestamp),
-            ).fetchone()
-            if row is None:
+            ).fetchall()
+            
+            eligible_task = None
+            for row in rows:
+                candidate = row_to_dict(row) or {}
+                candidate_id = candidate["id"]
+                candidate_write_scope = candidate.get("write_scope")
+                
+                # Check project linkage and conflict
+                project = self._project_for_task(candidate_id)
+                if project and candidate_write_scope:
+                    if self._has_lock_conflict(project["id"], candidate_id, candidate_write_scope):
+                        continue
+                eligible_task = candidate
+                break
+                
+            if eligible_task is None:
                 return None
-            task_id = int(row["id"])
-            original_branch = row["branch"]
+                
+            task_id = int(eligible_task["id"])
+            original_branch = eligible_task["branch"]
             from app.config import load_settings
             cfg = load_settings()
             updated_branch = original_branch
@@ -1299,6 +1356,24 @@ class Repository:
                 default_branch = project.get("base_branch") or "main"
                 if workspace_path:
                     new_base_commit = get_current_base_commit(workspace_path, default_branch)
+
+            # Release any existing active locks for this task
+            self._release_task_locks(task_id, timestamp)
+
+            # Acquire locks if write_scope exists
+            if project and eligible_task.get("write_scope"):
+                node_id = cfg.node_id or None
+                for pattern in eligible_task["write_scope"]:
+                    self.conn.execute(
+                        """
+                        INSERT INTO task_locks (
+                            project_id, task_id, worker_id, node_id, lock_type,
+                            resource_key, mode, status, created_at
+                        )
+                        VALUES (?, ?, ?, ?, 'path', ?, 'write', 'active', ?)
+                        """,
+                        (project["id"], task_id, worker_id, node_id, pattern, timestamp)
+                    )
 
             self.conn.execute(
                 """
@@ -1359,6 +1434,29 @@ class Repository:
                 default_branch = project_for_bc.get("base_branch") or "main"
                 if workspace_path:
                     new_base_commit = get_current_base_commit(workspace_path, default_branch)
+
+            # Check write-scope lock conflict
+            if project_for_bc and task.get("write_scope"):
+                if self._has_lock_conflict(project_for_bc["id"], task_id, task["write_scope"]):
+                    raise ValueError("Task has write-scope lock conflict with another active task")
+
+            # Release any existing active locks for this task
+            self._release_task_locks(task_id, timestamp)
+
+            # Acquire locks if write_scope exists
+            if project_for_bc and task.get("write_scope"):
+                node_id = cfg.node_id or None
+                for pattern in task["write_scope"]:
+                    self.conn.execute(
+                        """
+                        INSERT INTO task_locks (
+                            project_id, task_id, worker_id, node_id, lock_type,
+                            resource_key, mode, status, created_at
+                        )
+                        VALUES (?, ?, ?, ?, 'path', ?, 'write', 'active', ?)
+                        """,
+                        (project_for_bc["id"], task_id, worker_id, node_id, pattern, timestamp)
+                    )
 
             self.conn.execute(
                 """
@@ -1478,6 +1576,7 @@ class Repository:
                     timestamp,
                 ),
             )
+            self._release_task_locks(task_id, timestamp)
             self.conn.execute(
                 """
                 UPDATE tasks

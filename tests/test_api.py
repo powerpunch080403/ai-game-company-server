@@ -1601,3 +1601,228 @@ def test_scope_validation_retry_and_claim_blocks(client: TestClient) -> None:
     assert retried["status"] == "pending"
     assert retried["retry_count"] == 1
 
+
+# ---------------------------------------------------------------------------
+# Task Write-Scope Lock Prevention Tests
+# ---------------------------------------------------------------------------
+
+def _make_dummy_project_sub_epic(client: TestClient) -> int:
+    project = client.post("/projects", json={
+        "name": "Lock Test Project",
+        "engine": "undecided",
+        "repo_url": "dummy_repo",
+        "workspace_path": "dummy_workspace",
+        "base_branch": "main",
+    }).json()
+    epic = client.post(f"/projects/{project['id']}/epics", json={
+        "name": "Lock Test Epic",
+        "goal": "Test scope locking"
+    }).json()
+    sub_epic = client.post(f"/epics/{epic['id']}/sub-epics", json={
+        "name": "Lock Test Sub-Epic",
+        "goal": "Test scope locking"
+    }).json()
+    return sub_epic["id"]
+
+
+def test_lock_prevention_disjoint_scopes(client: TestClient) -> None:
+    # A. Two tasks with disjoint write scopes can be leased by different workers.
+    sub_epic_id = _make_dummy_project_sub_epic(client)
+
+    task1 = client.post(f"/sub-epics/{sub_epic_id}/tasks", json={
+        "role": "code_worker",
+        "goal": "Disjoint test 1",
+        "requirements": ["X"],
+        "success_criteria": ["Y"],
+        "estimated_minutes": 15,
+        "branch": "worker/disjoint-1",
+        "write_scope": ["src/player.py"],
+    }).json()
+
+    task2 = client.post(f"/sub-epics/{sub_epic_id}/tasks", json={
+        "role": "code_worker",
+        "goal": "Disjoint test 2",
+        "requirements": ["X"],
+        "success_criteria": ["Y"],
+        "estimated_minutes": 15,
+        "branch": "worker/disjoint-2",
+        "write_scope": ["src/enemy.py"],
+    }).json()
+
+    # Lease task 1 -> should succeed
+    leased1 = client.post("/workers/worker-1/lease", json={"role": "code_worker", "lease_minutes": 30}).json()
+    assert leased1["id"] == task1["id"]
+
+    # Lease task 2 -> should succeed because scopes are disjoint
+    leased2 = client.post("/workers/worker-2/lease", json={"role": "code_worker", "lease_minutes": 30}).json()
+    assert leased2["id"] == task2["id"]
+
+
+def test_lock_prevention_overlapping_lease_skipped(client: TestClient) -> None:
+    # B. Second task with same write scope is not leased while first task lock is active.
+    sub_epic_id = _make_dummy_project_sub_epic(client)
+
+    task1 = client.post(f"/sub-epics/{sub_epic_id}/tasks", json={
+        "role": "code_worker",
+        "goal": "Overlap test 1",
+        "requirements": ["X"],
+        "success_criteria": ["Y"],
+        "estimated_minutes": 15,
+        "branch": "worker/overlap-1",
+        "write_scope": ["src/player.py"],
+    }).json()
+
+    task2 = client.post(f"/sub-epics/{sub_epic_id}/tasks", json={
+        "role": "code_worker",
+        "goal": "Overlap test 2",
+        "requirements": ["X"],
+        "success_criteria": ["Y"],
+        "estimated_minutes": 15,
+        "branch": "worker/overlap-2",
+        "write_scope": ["src/player.py"],
+    }).json()
+
+    # Lease first -> should lease task 1
+    leased1 = client.post("/workers/worker-1/lease", json={"role": "code_worker", "lease_minutes": 30}).json()
+    assert leased1["id"] == task1["id"]
+
+    # Lease second -> should return HTTP 204 (no task available) because task 2 conflicts with task 1
+    leased2_res = client.post("/workers/worker-2/lease", json={"role": "code_worker", "lease_minutes": 30})
+    assert leased2_res.status_code == 204
+
+
+def test_lock_prevention_claim_rejected(client: TestClient) -> None:
+    # C. claim_task rejects a conflicting task while another active task holds the same write scope.
+    sub_epic_id = _make_dummy_project_sub_epic(client)
+
+    task1 = client.post(f"/sub-epics/{sub_epic_id}/tasks", json={
+        "role": "code_worker",
+        "goal": "Claim test 1",
+        "requirements": ["X"],
+        "success_criteria": ["Y"],
+        "estimated_minutes": 15,
+        "branch": "worker/claim-1",
+        "write_scope": ["src/player.py"],
+    }).json()
+
+    task2 = client.post(f"/sub-epics/{sub_epic_id}/tasks", json={
+        "role": "code_worker",
+        "goal": "Claim test 2",
+        "requirements": ["X"],
+        "success_criteria": ["Y"],
+        "estimated_minutes": 15,
+        "branch": "worker/claim-2",
+        "write_scope": ["src/player.py"],
+    }).json()
+
+    # Lease task 1 -> holds lock
+    leased1 = client.post("/workers/worker-1/lease", json={"role": "code_worker", "lease_minutes": 30}).json()
+    assert leased1["id"] == task1["id"]
+
+    # Attempt to claim task 2 -> should be rejected with 409 Conflict
+    claim_res = client.post(f"/workers/worker-2/tasks/{task2['id']}/claim", json={"lease_minutes": 30})
+    assert claim_res.status_code == 409
+    assert "lock conflict" in claim_res.json()["detail"]
+
+
+def test_lock_prevention_released_flow(client: TestClient) -> None:
+    # D. Completing/releasing the first task releases its locks, then the second task can be leased/claimed.
+    sub_epic_id = _make_dummy_project_sub_epic(client)
+
+    task1 = client.post(f"/sub-epics/{sub_epic_id}/tasks", json={
+        "role": "code_worker",
+        "goal": "Release flow test 1",
+        "requirements": ["X"],
+        "success_criteria": ["Y"],
+        "estimated_minutes": 15,
+        "branch": "worker/release-flow-1",
+        "write_scope": ["src/player.py"],
+    }).json()
+
+    task2 = client.post(f"/sub-epics/{sub_epic_id}/tasks", json={
+        "role": "code_worker",
+        "goal": "Release flow test 2",
+        "requirements": ["X"],
+        "success_criteria": ["Y"],
+        "estimated_minutes": 15,
+        "branch": "worker/release-flow-2",
+        "write_scope": ["src/player.py"],
+    }).json()
+
+    # Lease task 1 -> active lock
+    leased1 = client.post("/workers/worker-1/lease", json={"role": "code_worker", "lease_minutes": 30}).json()
+    assert leased1["id"] == task1["id"]
+
+    # Report completion (releases locks)
+    report = _report_payload("success")
+    report["changed_files"] = ["src/player.py"]
+    completed = client.post(f"/workers/worker-1/tasks/{task1['id']}/report", json=report).json()
+    assert completed["status"] == "success"
+
+    # Now task 2 should be leasable
+    leased2 = client.post("/workers/worker-2/lease", json={"role": "code_worker", "lease_minutes": 30}).json()
+    assert leased2["id"] == task2["id"]
+
+
+def test_lock_prevention_no_write_scope(client: TestClient) -> None:
+    # E. Task with no write_scope leases normally.
+    sub_epic_id = _make_dummy_project_sub_epic(client)
+
+    task1 = client.post(f"/sub-epics/{sub_epic_id}/tasks", json={
+        "role": "code_worker",
+        "goal": "No scope lease 1",
+        "requirements": ["X"],
+        "success_criteria": ["Y"],
+        "estimated_minutes": 15,
+        "branch": "worker/no-scope-lease-1",
+    }).json()
+
+    task2 = client.post(f"/sub-epics/{sub_epic_id}/tasks", json={
+        "role": "code_worker",
+        "goal": "No scope lease 2",
+        "requirements": ["X"],
+        "success_criteria": ["Y"],
+        "estimated_minutes": 15,
+        "branch": "worker/no-scope-lease-2",
+    }).json()
+
+    # Lease both successfully
+    leased1 = client.post("/workers/worker-1/lease", json={"role": "code_worker", "lease_minutes": 30}).json()
+    assert leased1["id"] == task1["id"]
+
+    leased2 = client.post("/workers/worker-2/lease", json={"role": "code_worker", "lease_minutes": 30}).json()
+    assert leased2["id"] == task2["id"]
+
+
+def test_lock_prevention_glob_conflict(client: TestClient) -> None:
+    # F. Glob conflict works for src/** vs src/player.py.
+    sub_epic_id = _make_dummy_project_sub_epic(client)
+
+    task1 = client.post(f"/sub-epics/{sub_epic_id}/tasks", json={
+        "role": "code_worker",
+        "goal": "Glob lock test 1",
+        "requirements": ["X"],
+        "success_criteria": ["Y"],
+        "estimated_minutes": 15,
+        "branch": "worker/glob-lock-1",
+        "write_scope": ["src/**"],
+    }).json()
+
+    task2 = client.post(f"/sub-epics/{sub_epic_id}/tasks", json={
+        "role": "code_worker",
+        "goal": "Glob lock test 2",
+        "requirements": ["X"],
+        "success_criteria": ["Y"],
+        "estimated_minutes": 15,
+        "branch": "worker/glob-lock-2",
+        "write_scope": ["src/player.py"],
+    }).json()
+
+    # Lease task 1 (lock is src/**)
+    leased1 = client.post("/workers/worker-1/lease", json={"role": "code_worker", "lease_minutes": 30}).json()
+    assert leased1["id"] == task1["id"]
+
+    # Lease task 2 -> fails with HTTP 204 (no task available) because src/player.py conflicts with src/**
+    leased2_res = client.post("/workers/worker-2/lease", json={"role": "code_worker", "lease_minutes": 30})
+    assert leased2_res.status_code == 204
+

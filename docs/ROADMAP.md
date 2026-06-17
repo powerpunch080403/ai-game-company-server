@@ -153,6 +153,7 @@ Most of this is already implemented.
    - Discord Gateway natural-language approval routing is implemented (2026-06-17 완료).
    - **Base Commit Tracking & Stale-Base Detection** — `base_commit` recorded on task lease/claim; `needs_rebase` status emitted on complete when default branch has advanced (v1, implemented)
    - **Write Scope & Scope Violation Detection** — `write_scope`, `read_scope`, and `forbidden_scope` pattern rules; `changed_files` checked on complete, emitting `scope_violation` if invalid (v1, implemented)
+   - **Write Scope Conflict Prevention** — `task_locks` prevent overlapping active write scopes during lease/claim (v1, implemented)
 
 ## v1.5 Later: Intermediate Multi-Node & Memory Expansion
 

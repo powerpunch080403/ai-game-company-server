@@ -137,6 +137,7 @@ To prevent concurrent modification conflicts across nodes, the control plane emp
    - Triggers `stale_base` status on active tasks when overlapping areas are merged, requesting rebase/retest.
 8. **Base Commit Tracking**: On lease/claim, the server records the current `main`/default-branch commit hash as `base_commit` on the task. On completion, if `base_commit` differs from the current default branch, the task is automatically marked `needs_rebase` instead of merge-ready.
 9. **Write Scope Validation**: Tasks can declare `write_scope`, `read_scope`, and `forbidden_scope` pattern rules. On completion, if the worker reports `changed_files`, the server validates them. Any policy violation triggers a `scope_violation` status, which blocks claiming and merge actions until retried.
+10. **Write Scope Conflict Prevention**: Uses `task_locks` to prevent overlapping active write scopes during lease/claim.
 
 ## Assignment & Task Selection Algorithm
 
