@@ -52,7 +52,7 @@ Do not rely on the remote being available. If the main computer is down, continu
 - Worker and Machine Registry APIs
 - Machine and Worker heartbeat endpoints
 - Worker registry `last_seen_at` updates from task lease, claim, and report
-- Artifact metadata, raw upload, and raw download APIs
+- Artifact metadata, raw upload, and raw download APIs (Large file streaming upload implemented)
 - Approval/Decision request and decision APIs
 - Golden Path API evidence loop test
 - `game-pygame-mini` project scaffold and Test Runner preset
@@ -136,7 +136,6 @@ Remaining Golden Path tasks:
 - [x] Create initial Unity skeleton task lease, execute, and merge loop. (2026-06-17 완료)
 
 Next v1 priorities after Golden Path stabilization:
-- Large file streaming upload (currently 100 MiB limit, in-memory).
 - Discord bot real server integration testing (currently connected to gateway, needs channel mapping and commands setup).
 - Natural-language approval flow completion.
 
