@@ -65,13 +65,105 @@ The current codebase already has the core automation loop:
 - DB backup script.
 - Remote deploy script.
 
-## Current Design Direction
+## Current Design Direction & Productized Use
 
-The server started as an AI game development company server. The long-term
-direction is broader: games, apps, web services, tools, plugins, automation, and
-other software projects.
+The server started as an AI game development company server. The long-term direction is broader: games, apps, web services, tools, plugins, automation, and other software projects. It is an AI development company control plane, not just a game automation script.
 
-Keep the system project-type aware, but do not hard-lock it to games only.
+### Scaling & Deployment Models
+The system should support two primary use cases:
+1. **Personal / Small-Team Use**: A developer runs a single server. Friends can run their own server instances, and multiple nodes can collaborate on the same shared project repository.
+2. **Productized Use**: Other users can install and run this control plane program. A single project may have multiple server instances attached, scaling smoothly from one-person development to complex company-like collaboration.
+
+## Multi-Node Topology & Project Roles
+
+To support multi-node productized collaboration, all nodes run the same codebase but can be configured into different project roles. These roles are not hardcoded separate server binaries but are database/config-driven designations.
+
+### Authority vs. Peer Nodes
+For any specific project, there is exactly one designated **Authority Node** and multiple **Peer/Worker Nodes**:
+* **Authority Node**: Owns the official project state, the official task queue, official locks, the per-project merge queue, release decisions, project-level policy enforcement, and final integration into the `main` branch.
+* **Peer Nodes**: Own their local workspace, execute local workers/agents, run local tests/verifications, compile analysis/proposals, and submit results as change packages. Peer nodes cannot directly mutate the official project state unless the authority node reviews and accepts their reports/events.
+
+### Configurable Project Roles
+Nodes attached to a project can assume various roles including:
+- **authority node**: Rules over state and merging.
+- **peer node**: Coordinates a developer workspace.
+- **worker node**: General agent task runner.
+- **test/QA node**: Focused builds and regression testing.
+- **review node**: Runs LLM code inspections.
+- **release node**: Prepares store/deployment packages.
+- **docs node**: Automates documentation rendering.
+- **infra node**: Manages CI/CD, sandboxes, and backups.
+
+## Company-like Collaboration Model
+
+As the server node count scales, the control plane shifts away from treating servers as independent workers. Instead, it groups nodes by teams, areas, and responsibilities.
+
+```text
+Company
+  -> Project
+  -> Teams
+  -> Areas
+  -> Roles
+  -> Nodes
+  -> Capabilities
+  -> Tasks
+  -> Change Packages
+  -> Reviews
+  -> Merge Queue
+  -> Release
+```
+
+### Domain Area Ownership by Project Type
+Projects define area hierarchies. Example areas based on project type include:
+
+* **web_app**: `frontend.pages`, `frontend.components`, `frontend.state`, `backend.api`, `backend.services`, `backend.auth`, `database.schema`, `database.migrations`, `infra.deploy`, `test.e2e`, `docs`
+* **backend_service**: `api.routes`, `domain.user`, `domain.billing`, `database.models`, `database.migrations`, `auth`, `queue.jobs`, `observability`, `deployment`
+* **mobile_app**: `app.navigation`, `app.screens`, `app.state`, `native.ios`, `native.android`, `api_client`, `storage`, `push_notifications`, `release.store`
+* **game_project**: `gameplay.player`, `gameplay.enemy`, `gameplay.combat`, `ui.hud`, `ui.menu`, `content.levels`, `content.assets`, `tools`, `build`, `qa`
+* **cli_tool**: `cli.commands`, `core.logic`, `config`, `file_io`, `plugins`, `packaging`, `docs`, `tests`
+* **desktop_app**: `ui.shell`, `ui.views`, `state`, `core.logic`, `filesystem`, `native.integration`, `packaging`, `auto_update`, `tests`
+
+## Conflict Prevention & Merge Queue
+
+To prevent concurrent modification conflicts across nodes, the control plane employs:
+1. **Authority-Issued Task Leases**: Lock-in a task to a single node.
+2. **Write Scope**: Restricts which files or directories a node can modify.
+3. **Area Locks**: Exclusive or shared locks on specific areas (e.g. database migrations).
+4. **Branch Naming Convention**: `worker/{node_id}/{task_id}-{slug}` (e.g. `worker/friend-a/T014-task-card`, `worker/main-node/T099-release-candidate`).
+5. **Change Packages**: The official task result container containing commits, base/head hashes, file changes, test status, and artifact references.
+6. **Per-Project Merge Queue**: Serializes integrations to verify code correctness and avoid race conditions.
+7. **Merge-Time and Post-Merge Checks**:
+   - Checks base commit freshness, write scope validation, lock status, and risk checks.
+   - Triggers `stale_base` status on active tasks when overlapping areas are merged, requesting rebase/retest.
+
+## Assignment & Task Selection Algorithm
+
+The authority node matches task requirements to node attributes using a standard eligibility check:
+
+```python
+def can_assign(task, node):
+    if not node.has_capabilities(task.required_capabilities):
+        return False
+    if not node.has_role_for_area(task.area):
+        return False
+    if not node.permissions.allow(task.task_kind):
+        return False
+    if task.risk_level > node.max_risk_level:
+        return False
+    if has_active_lock_conflict(task):
+        return False
+    if not dependencies_ready(task):
+        return False
+    return True
+```
+
+## Scaling Stages
+
+The project organizational topology adapts dynamically as the count of attached servers grows:
+- **1 to 3 Nodes**: Authority node + general worker + test runner.
+- **4 to 8 Nodes**: Split by key functions (frontend worker, backend worker, QA worker, docs worker, infra worker, review worker).
+- **9 to 20 Nodes**: Micro-teams (frontend component team, database team, auth team, infra CI team, release team).
+- **20+ Nodes**: Full functional divisions (product team, platform team, feature teams, release team, QA team, docs team).
 
 ## Machine Layout
 

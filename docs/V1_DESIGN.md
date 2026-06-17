@@ -220,3 +220,169 @@ Task 1 is intentionally left as a pending orphan:
 - Current behavior: workspace workers skip it because it is not project-attached.
 
 Do not auto-cancel or auto-assign Task 1 without user approval.
+
+## Generalized Role System (Data-Driven)
+
+Roles are not hardcoded but defined as data to configure what a node can do and where it is allowed to do it.
+
+A role is defined as:
+`Role = capability requirements + area scope + permissions + workflow stages + risk limit + review policy`
+
+Example role definition:
+
+```json
+{
+  "role_id": "backend_worker",
+  "task_kinds": ["implement", "fix", "refactor"],
+  "area_patterns": ["backend.*", "api.*", "domain.*"],
+  "required_capabilities": ["python", "fastapi"],
+  "permissions": ["task.claim", "code.write", "test.run", "change.submit"],
+  "blocked_permissions": ["main.merge", "release.publish"],
+  "workflow_stages": ["implement", "test"],
+  "risk_limit": "normal",
+  "review_policy": "backend_review_required"
+}
+```
+
+A node can be assigned multiple roles (e.g. Developer-A can be both `backend_worker` and `api_reviewer`).
+
+## Capability Registry
+
+Capabilities represent technical proficiencies or environmental tools available on a node.
+
+Standard capabilities:
+- Language & Framework: `python`, `fastapi`, `react`, `typescript`, `tailwind`, `flutter`, `unity`, `godot`
+- Storage & DB: `sqlite`, `postgres`
+- Testing & CI/CD: `pytest`, `playwright`, `docker`, `linux`, `github_actions`
+- Specialist: `security_review`, `documentation`, `release_management`
+
+Tasks declare required capabilities. Nodes declare available capabilities. The Authority node assigns tasks by matching requirements to available node capabilities.
+
+## Permission Registry
+
+Permissions are granular strings that control what operations a node is allowed to perform. Capabilities do not grant permissions; permission grants are managed explicitly via roles.
+
+Granular permissions include:
+- **Task Management**: `task.create`, `task.claim`, `task.assign`, `task.cancel`
+- **Code Access**: `code.read`, `code.write`, `code.delete`
+- **Testing**: `test.run`
+- **Artifacts**: `artifact.upload`
+- **Review & Merging**: `review.comment`, `review.approve`, `merge.propose`, `merge.execute`
+- **Release Operations**: `release.prepare`, `release.publish`
+- **Secrets & Administration**: `secret.read`, `secret.write`, `node.invite`, `node.remove`, `policy.edit`
+
+## Area Ownership & Policies
+
+Projects define modular areas with distinct access policies:
+
+```json
+{
+  "area_id": "backend.auth",
+  "project_id": "my-web-app",
+  "owner_team": "backend",
+  "parallel_policy": "limited",
+  "risk_level": "high"
+}
+```
+
+Available parallel policies:
+* `free`: Unrestricted concurrent tasks.
+* `limited`: Concurrent execution allowed, but changes must go through the merge queue and base-freshness validation checks.
+* `exclusive`: Only one active task lease is allowed at a time (e.g., database schema migrations, generated files, global configurations).
+* `lead_only`: Only nodes with lead, reviewer, or authority roles can modify (e.g., security policies, release lockfiles).
+
+## Role Packs (Default Presets)
+
+Role packs are default presets for standard project configurations. They are fully customizable by users.
+
+* **web_app_role_pack**: `product_owner`, `frontend_worker`, `backend_worker`, `database_worker`, `qa_worker`, `infra_worker`, `security_reviewer`, `docs_worker`, `release_manager`
+* **backend_service_role_pack**: `api_worker`, `domain_worker`, `database_worker`, `queue_worker`, `observability_worker`, `qa_worker`, `security_reviewer`, `release_manager`
+* **game_project_role_pack**: `gameplay_worker`, `ui_worker`, `tools_worker`, `content_worker`, `asset_worker`, `qa_worker`, `build_worker`, `release_manager`
+* **cli_tool_role_pack**: `cli_worker`, `core_logic_worker`, `packaging_worker`, `docs_worker`, `qa_worker`, `release_manager`
+
+## Suggested Minimal Data Model (Multi-Node Schema)
+
+A relational SQLite database model proposal for future multi-node capability:
+
+### nodes
+- `node_id` (PK)
+- `display_name`
+- `node_mode` (authority | peer)
+- `trust_level`
+- `status`
+- `last_seen_at`
+
+### capabilities
+- `capability_id` (PK)
+- `name`
+- `category`
+
+### node_capabilities
+- `node_id` (FK)
+- `capability_id` (FK)
+- `level` (basic | normal | expert)
+
+### roles
+- `role_id` (PK)
+- `project_id`
+- `name`
+- `description`
+- `risk_limit`
+
+### role_rules
+- `role_id` (FK)
+- `task_kind`
+- `area_pattern`
+- `required_capabilities_json`
+- `permissions_json`
+- `review_policy`
+
+### node_role_assignments
+- `node_id` (FK)
+- `role_id` (FK)
+- `project_id`
+- `team_id`
+- `active` (boolean)
+
+### teams
+- `team_id` (PK)
+- `project_id`
+- `name`
+- `lead_node_id` (FK)
+
+### project_areas
+- `area_id` (PK)
+- `project_id`
+- `name`
+- `owner_team_id` (FK)
+- `parallel_policy` (free | limited | exclusive | lead_only)
+- `risk_level`
+
+### task_dependencies
+- `task_id` (FK)
+- `depends_on_task_id` (FK)
+- `dependency_type` (hard | soft | merge_only)
+
+### change_packages
+- `change_id` (PK)
+- `task_id` (FK)
+- `origin_node_id` (FK)
+- `branch_name`
+- `base_commit`
+- `head_commit`
+- `changed_files_json`
+- `test_status`
+- `review_status`
+- `merge_status`
+- `artifact_refs_json`
+
+### task_locks
+- `lock_id` (PK)
+- `project_id`
+- `task_id` (FK)
+- `node_id` (FK)
+- `lock_type` (path | area | config)
+- `resource_key`
+- `mode` (read | write | exclusive)
+- `status` (active | released | expired)
+- `expires_at`

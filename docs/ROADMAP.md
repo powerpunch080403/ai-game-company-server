@@ -152,7 +152,7 @@ Most of this is already implemented.
    - Discord setup doctor and setup guide are implemented.
    - Discord Gateway natural-language approval routing is implemented (2026-06-17 완료).
 
-## v1.5 Later
+## v1.5 Later: Intermediate Multi-Node & Memory Expansion
 
 - Vector search for memory.
 - Multiple parallel workers.
@@ -162,6 +162,22 @@ Most of this is already implemented.
 - Local model hosting.
 - Systemd service for always-on server.
 - Web UI.
+- **Multi-Node Role and Capability Registries**:
+  - Full relational DB schema migration for nodes, capabilities, roles, assignments, and teams.
+  - Fine-grained permission verification for task actions (create, claim, assign, etc.).
+  - Area ownership policies (free, limited, exclusive, lead_only) enforcement.
+  - Task dependency graph scheduler.
+  - Change Package data model implementation.
+  - Peer node workspace state synchronization.
+
+## v2: Scaling & Productization
+
+- **Multi-User Installers**: Ready-to-run package installer for self-hosted developer team environments.
+- **Multi-Project Management Dashboard**: A unified control-plane UI to coordinate multiple codebases and workspaces.
+- **Interactive Role Pack Configuration**: Web UI to define, modify, and assign role presets (Web app, backend service, game project, CLI tools).
+- **Custom Workflow Editor**: Visual editor for designing step-by-step task pipelines and approvals.
+- **Audit Logs & Security Policies**: Secure log archive for compliance and change tracking.
+- **Release Train Automation**: Coordinate multi-stage releases and package/store publishing flows.
 
 ## Decisions Needed Later
 
