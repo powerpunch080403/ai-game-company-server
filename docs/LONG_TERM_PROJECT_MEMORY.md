@@ -8,7 +8,7 @@ An English version is planned.
 
 ## Summary
 
-* Long-term memory strategy for project decisions and task history.
-* Memory categories, retrieval rules, and operator usage.
-* How memory supports Owner review and future planning.
-* Safety boundaries for storing project context.
+- Long-term memory strategy for project decisions and task history.
+- Memory categories, retrieval rules, and operator usage.
+- How memory supports Owner review and future planning.
+- Safety boundaries for storing project context.

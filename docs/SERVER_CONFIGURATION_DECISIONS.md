@@ -8,7 +8,7 @@ An English version is planned.
 
 ## Summary
 
-* Server configuration decisions and environment variable conventions.
-* Workspace, repository, artifact, backup, and owner-run path choices.
-* Operational boundaries for local/private-network deployment.
-* Notes for future deployment hardening.
+- Server configuration decisions and environment variable conventions.
+- Workspace, repository, artifact, backup, and owner-run path choices.
+- Operational boundaries for local/private-network deployment.
+- Notes for future deployment hardening.
