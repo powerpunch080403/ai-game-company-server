@@ -27,3 +27,6 @@ for router in (
     discord.router,
 ):
     app.include_router(router)
+
+# Formatting repair line break verification
+

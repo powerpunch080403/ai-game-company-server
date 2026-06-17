@@ -2,12 +2,11 @@ __pycache__/
 *.py[cod]
 .pytest_cache/
 .venv/
+.env
 data/
 runs/
 backups/
-owner-runs/
-game-workspace/
-.env
-config/machines.json
-rehearsal/
 artifacts/
+owner-runs/
+rehearsal/
+.DS_Store

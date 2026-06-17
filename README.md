@@ -5,11 +5,13 @@
 - English: this README
 - Korean: [docs/README.ko.md](docs/README.ko.md)
 
-AI Game Company Server is a control server for running an AI-assisted software
-development workflow. The first target is game development, but the v1 design
-also supports app, web, backend, tool, automation, and plugin projects.
+AI Game Company Server is a control server for running an AI-assisted software development workflow.
 
-This is not a game runtime server. It is a project control plane:
+The first target is game development, but the v1 design also supports app, web, backend, tool, automation, and plugin projects.
+
+This is not a game runtime server.
+
+It is a project control plane:
 
 > [!WARNING]
 > * This server is a **non-production prototype** for local or private VPN (e.g., Tailscale) workflows. Do not expose its raw HTTP/WS ports publicly to the open internet without HTTPS and proper token authorization.
