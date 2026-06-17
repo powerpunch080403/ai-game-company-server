@@ -1268,3 +1268,156 @@ def test_multi_node_branch_naming(client: TestClient, monkeypatch: pytest.Monkey
     monkeypatch.setenv("GAME_COMPANY_NODE_ID", "friend-a")
     claimed = client.post(f"/workers/gemini-worker-2/tasks/{task_id}/claim", json={"lease_minutes": 30}).json()
     assert claimed["branch"] == f"worker/friend-a/{task_id}-branch-slug"
+
+
+# ---------------------------------------------------------------------------
+# base_commit tracking and stale-base detection tests
+# ---------------------------------------------------------------------------
+
+def _report_payload(status: str = "success") -> dict:
+    """Minimal valid WorkerReportCreate payload."""
+    return {
+        "status": status,
+        "estimated_minutes": 15,
+        "actual_minutes": 10,
+        "productive_minutes": 8,
+        "error_minutes": 2,
+        "retry_count": 0,
+        "files_changed": [],
+        "tests": [],
+        "summary": "Done",
+        "issues": "",
+    }
+
+
+def _make_project_with_repo(client: TestClient, source: Path, remote: Path) -> tuple[int, int]:
+    """Create project -> epic -> sub_epic and return (project_id, sub_epic_id)."""
+    project = client.post("/projects", json={
+        "name": "BaseCommit Test Project",
+        "engine": "undecided",
+        "repo_url": str(remote),
+        "workspace_path": str(source),
+        "base_branch": "main",
+    }).json()
+    epic = client.post(f"/projects/{project['id']}/epics", json={"name": "E", "goal": ""}).json()
+    sub_epic = client.post(f"/epics/{epic['id']}/sub-epics", json={"name": "SE", "goal": ""}).json()
+    return project["id"], sub_epic["id"]
+
+
+def test_base_commit_recorded_on_lease(client: TestClient, tmp_path: Path) -> None:
+    """base_commit is recorded on the task when leased with a project that has a git workspace."""
+    remote, _workspace = make_git_repo(tmp_path)
+    source = tmp_path / "source"   # created by make_git_repo
+
+    _proj_id, sub_epic_id = _make_project_with_repo(client, source, remote)
+
+    task = client.post(f"/sub-epics/{sub_epic_id}/tasks", json={
+        "role": "code_worker",
+        "goal": "Test base commit recording",
+        "requirements": ["Do something"],
+        "success_criteria": ["Done"],
+        "estimated_minutes": 15,
+        "memory_refs": [],
+        "branch": "worker/base-commit-test",
+    }).json()
+    task_id = task["id"]
+    assert task.get("base_commit") is None  # not set before lease
+
+    leased = client.post("/workers/bc-worker/lease", json={"role": "code_worker", "lease_minutes": 30}).json()
+    assert leased["id"] == task_id
+    assert leased.get("base_commit") is not None
+    assert len(leased["base_commit"]) == 40  # full SHA-1 commit hash
+
+
+def test_base_commit_null_when_no_project(client: TestClient) -> None:
+    """Orphan tasks (no project / no workspace) still lease successfully; base_commit stays None."""
+    task = client.post("/tasks", json={
+        "role": "code_worker",
+        "goal": "Orphan task",
+        "requirements": ["X"],
+        "success_criteria": ["Y"],
+        "estimated_minutes": 10,
+        "memory_refs": [],
+        "branch": "worker/orphan-task",
+    }).json()
+    task_id = task["id"]
+    assert task.get("base_commit") is None
+
+    leased = client.post("/workers/orphan-worker/lease", json={"role": "code_worker", "lease_minutes": 30}).json()
+    assert leased["id"] == task_id
+    # base_commit stays None because there is no linked project with a workspace
+    assert leased.get("base_commit") is None
+
+
+def test_stale_base_detected_on_complete(client: TestClient, tmp_path: Path) -> None:
+    """If main advances after lease, reporting success → task becomes needs_rebase."""
+    remote, _workspace = make_git_repo(tmp_path)
+    source = tmp_path / "source"
+
+    _proj_id, sub_epic_id = _make_project_with_repo(client, source, remote)
+
+    task = client.post(f"/sub-epics/{sub_epic_id}/tasks", json={
+        "role": "code_worker",
+        "goal": "Stale base test",
+        "requirements": ["X"],
+        "success_criteria": ["Y"],
+        "estimated_minutes": 15,
+        "memory_refs": [],
+        "branch": "worker/stale-base-test",
+    }).json()
+    task_id = task["id"]
+
+    # Lease — records base_commit from source/main
+    leased = client.post("/workers/stale-worker/lease", json={"role": "code_worker", "lease_minutes": 30}).json()
+    assert leased["id"] == task_id
+    initial_commit = leased.get("base_commit")
+    assert initial_commit is not None
+
+    # Advance main in the source repo (simulates another commit landing while worker was running)
+    (source / "ADVANCE.md").write_text("advance\n", encoding="utf-8")
+    git(["add", "ADVANCE.md"], cwd=source)
+    git(["commit", "-m", "Advance main"], cwd=source)
+
+    # Report success → should be downgraded to needs_rebase
+    reported = client.post(
+        f"/workers/stale-worker/tasks/{task_id}/report",
+        json=_report_payload("success"),
+    ).json()
+    assert reported["status"] == "needs_rebase"
+
+    # Task events should include a needs_rebase entry
+    events = client.get(f"/tasks/{task_id}/events").json()
+    event_types = [e["event_type"] for e in events]
+    assert "needs_rebase" in event_types
+
+
+def test_no_stale_base_when_unchanged(client: TestClient, tmp_path: Path) -> None:
+    """If main has not moved since lease, reporting success keeps status=success."""
+    remote, _workspace = make_git_repo(tmp_path)
+    source = tmp_path / "source"
+
+    _proj_id, sub_epic_id = _make_project_with_repo(client, source, remote)
+
+    task = client.post(f"/sub-epics/{sub_epic_id}/tasks", json={
+        "role": "code_worker",
+        "goal": "Fresh base test",
+        "requirements": ["X"],
+        "success_criteria": ["Y"],
+        "estimated_minutes": 15,
+        "memory_refs": [],
+        "branch": "worker/fresh-base-test",
+    }).json()
+    task_id = task["id"]
+
+    leased = client.post("/workers/fresh-worker/lease", json={"role": "code_worker", "lease_minutes": 30}).json()
+    assert leased["id"] == task_id
+    assert leased.get("base_commit") is not None
+
+    # Do NOT advance main — report success immediately
+    reported = client.post(
+        f"/workers/fresh-worker/tasks/{task_id}/report",
+        json=_report_payload("success"),
+    ).json()
+    # base_commit unchanged → status remains success
+    assert reported["status"] == "success"
+

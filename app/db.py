@@ -74,7 +74,8 @@ CREATE TABLE IF NOT EXISTS tasks (
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL,
     started_at TEXT,
-    completed_at TEXT
+    completed_at TEXT,
+    base_commit TEXT
 );
 
 CREATE INDEX IF NOT EXISTS idx_tasks_status_role ON tasks(status, role);
@@ -259,6 +260,10 @@ PROJECT_COLUMNS = {
     "base_branch": "TEXT NOT NULL DEFAULT 'main'",
 }
 
+TASK_COLUMNS = {
+    "base_commit": "TEXT",
+}
+
 
 def connect(db_path: Path) -> sqlite3.Connection:
     db_path.parent.mkdir(parents=True, exist_ok=True)
@@ -282,6 +287,13 @@ def migrate_db(conn: sqlite3.Connection) -> None:
     for name, definition in PROJECT_COLUMNS.items():
         if name not in project_columns:
             conn.execute(f"ALTER TABLE projects ADD COLUMN {name} {definition}")
+    task_columns = {
+        row["name"]
+        for row in conn.execute("PRAGMA table_info(tasks)").fetchall()
+    }
+    for name, definition in TASK_COLUMNS.items():
+        if name not in task_columns:
+            conn.execute(f"ALTER TABLE tasks ADD COLUMN {name} {definition}")
     conn.commit()
 
 

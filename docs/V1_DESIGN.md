@@ -69,6 +69,7 @@ Each task must include:
 - Estimated Time
 - Memory Refs
 - Branch
+- `base_commit` — git commit hash of the default branch at lease/claim time (nullable; None for orphan tasks or when git is unavailable)
 
 Detailed planning rules live in [OWNER_TASK_PLANNING.md](OWNER_TASK_PLANNING.md).
 
@@ -189,6 +190,9 @@ Current merge requirements:
 - Project has `repo_url` and `workspace_path`.
 - Branch starts with `worker/`.
 - Task was not already merged.
+
+Task status values include: `pending`, `running`, `success`, `failed`, `blocked`, `canceled`, and:
+- `needs_rebase` — reported as success but `base_commit` has moved; must be retried before merge
 
 Warnings:
 

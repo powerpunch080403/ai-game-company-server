@@ -135,6 +135,7 @@ To prevent concurrent modification conflicts across nodes, the control plane emp
 7. **Merge-Time and Post-Merge Checks**:
    - Checks base commit freshness, write scope validation, lock status, and risk checks.
    - Triggers `stale_base` status on active tasks when overlapping areas are merged, requesting rebase/retest.
+8. **Base Commit Tracking**: On lease/claim, the server records the current `main`/default-branch commit hash as `base_commit` on the task. On completion, if `base_commit` differs from the current default branch, the task is automatically marked `needs_rebase` instead of merge-ready.
 
 ## Assignment & Task Selection Algorithm
 

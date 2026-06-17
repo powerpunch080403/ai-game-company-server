@@ -151,6 +151,7 @@ Most of this is already implemented.
      submission.
    - Discord setup doctor and setup guide are implemented.
    - Discord Gateway natural-language approval routing is implemented (2026-06-17 완료).
+   - **Base Commit Tracking & Stale-Base Detection** — `base_commit` recorded on task lease/claim; `needs_rebase` status emitted on complete when default branch has advanced (v1, implemented)
 
 ## v1.5 Later: Intermediate Multi-Node & Memory Expansion
 

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
+import subprocess
 import uuid
 from datetime import UTC, datetime, timedelta
 from hashlib import sha256
@@ -85,6 +86,31 @@ def row_to_dict(row: sqlite3.Row | None) -> dict[str, Any] | None:
         if key in item:
             item[key] = bool(item[key])
     return item
+
+
+def get_current_base_commit(repo_path: str, default_branch: str = "main") -> str | None:
+    """Return the current HEAD commit of `default_branch` in `repo_path`.
+
+    Returns None if the path is missing, not a git repo, or git fails.
+    Never raises — failures are silently swallowed to preserve normal task flow.
+    """
+    try:
+        from pathlib import Path as _Path
+        if not repo_path or not _Path(repo_path).exists():
+            return None
+        result = subprocess.run(
+            ["git", "rev-parse", default_branch],
+            capture_output=True,
+            text=True,
+            cwd=repo_path,
+            timeout=5,
+        )
+        if result.returncode == 0:
+            commit = result.stdout.strip()
+            return commit if commit else None
+        return None
+    except Exception:
+        return None
 
 
 class Repository:
@@ -1212,6 +1238,15 @@ class Repository:
                     slug = last_part
                 updated_branch = f"worker/{cfg.node_id}/{task_id}-{slug}"
 
+            # Record base_commit from project workspace (if available and not already set)
+            project = self._project_for_task(task_id)
+            new_base_commit = None
+            if project:
+                workspace_path = project.get("workspace_path") or ""
+                default_branch = project.get("base_branch") or "main"
+                if workspace_path:
+                    new_base_commit = get_current_base_commit(workspace_path, default_branch)
+
             self.conn.execute(
                 """
                 UPDATE tasks
@@ -1220,10 +1255,11 @@ class Repository:
                     leased_until = ?,
                     started_at = COALESCE(started_at, ?),
                     updated_at = ?,
-                    branch = ?
+                    branch = ?,
+                    base_commit = COALESCE(base_commit, ?)
                 WHERE id = ?
                 """,
-                (worker_id, lease_until, timestamp, timestamp, updated_branch, task_id),
+                (worker_id, lease_until, timestamp, timestamp, updated_branch, new_base_commit, task_id),
             )
             self._add_task_event(task_id, "leased", f"Leased by {worker_id}")
             self._touch_worker(worker_id, role=role, status="busy")
@@ -1239,7 +1275,7 @@ class Repository:
             task = row_to_dict(row) or {}
             if task["status"] == "success":
                 raise ValueError("successful task cannot be claimed")
-            if task["status"] in {"failed", "blocked"}:
+            if task["status"] in {"failed", "blocked", "needs_rebase"}:
                 raise ValueError("failed or blocked task must be retried before claim")
             if (
                 task["status"] == "running"
@@ -1262,6 +1298,15 @@ class Repository:
                     slug = last_part
                 updated_branch = f"worker/{cfg.node_id}/{task_id}-{slug}"
 
+            # Record base_commit from project workspace (if available and not already set)
+            project_for_bc = self._project_for_task(task_id)
+            new_base_commit = None
+            if project_for_bc:
+                workspace_path = project_for_bc.get("workspace_path") or ""
+                default_branch = project_for_bc.get("base_branch") or "main"
+                if workspace_path:
+                    new_base_commit = get_current_base_commit(workspace_path, default_branch)
+
             self.conn.execute(
                 """
                 UPDATE tasks
@@ -1270,10 +1315,11 @@ class Repository:
                     leased_until = ?,
                     started_at = COALESCE(started_at, ?),
                     updated_at = ?,
-                    branch = ?
+                    branch = ?,
+                    base_commit = COALESCE(base_commit, ?)
                 WHERE id = ?
                 """,
-                (worker_id, lease_until, timestamp, timestamp, updated_branch, task_id),
+                (worker_id, lease_until, timestamp, timestamp, updated_branch, new_base_commit, task_id),
             )
             self._add_task_event(task_id, "leased", f"Leased by {worker_id}")
             self._touch_worker(worker_id, role=task["role"], status="busy")
@@ -1284,6 +1330,26 @@ class Repository:
         if task["status"] != "running" or task["leased_by"] != worker_id:
             raise ValueError("task must be leased by the reporting worker")
         timestamp = now_iso()
+
+        # Stale-base detection: if worker reports success but main has moved, mark needs_rebase
+        final_status = payload.status
+        stale_msg = ""
+        if payload.status == "success":
+            task_base_commit = task.get("base_commit")
+            if task_base_commit:
+                stale_project = self._project_for_task(task_id)
+                if stale_project:
+                    ws = stale_project.get("workspace_path") or ""
+                    db = stale_project.get("base_branch") or "main"
+                    if ws:
+                        current_commit = get_current_base_commit(ws, db)
+                        if current_commit and current_commit != task_base_commit:
+                            final_status = "needs_rebase"
+                            stale_msg = (
+                                f"base moved from {task_base_commit[:12]} to "
+                                f"{current_commit[:12]}; rebase required before merge"
+                            )
+
         with transaction(self.conn):
             report_cur = self.conn.execute(
                 """
@@ -1340,9 +1406,9 @@ class Repository:
                 """,
                 (
                     history_key,
-                    f"Task {task_id} report {report_id}: {payload.status}",
+                    f"Task {task_id} report {report_id}: {final_status}",
                     history_body,
-                    json.dumps(["task_history", task["role"], payload.status]),
+                    json.dumps(["task_history", task["role"], final_status]),
                     timestamp,
                     timestamp,
                 ),
@@ -1354,13 +1420,15 @@ class Repository:
                     retry_count = ?,
                     leased_by = NULL,
                     leased_until = NULL,
-                    completed_at = CASE WHEN ? IN ('success', 'blocked') THEN ? ELSE completed_at END,
+                    completed_at = CASE WHEN ? IN ('success', 'blocked', 'needs_rebase') THEN ? ELSE completed_at END,
                     updated_at = ?
                 WHERE id = ?
                 """,
-                (payload.status, payload.retry_count, payload.status, timestamp, timestamp, task_id),
+                (final_status, payload.retry_count, final_status, timestamp, timestamp, task_id),
             )
-            self._add_task_event(task_id, "reported", f"{worker_id} reported {payload.status}")
+            self._add_task_event(task_id, "reported", f"{worker_id} reported {final_status}")
+            if stale_msg:
+                self._add_task_event(task_id, "needs_rebase", stale_msg)
             self._touch_worker(worker_id, role=task["role"], status="online")
         return self.get_task(task_id)
 
