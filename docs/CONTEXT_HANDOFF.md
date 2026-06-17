@@ -134,8 +134,8 @@ Project -> Epic -> Sub Epic -> Task -> worker lease -> task package
 ```
 
 Remaining Golden Path tasks:
-- README.md guide update with exact rehearsal commands.
-- Pygame Test Runner headless preset hardening (CI/CD environments).
+- [x] README.md guide update with exact rehearsal commands. (2026-06-17 완료)
+- [x] Pygame Test Runner headless preset hardening (CI/CD environments). (2026-06-17 완료)
 
 Next v1 priorities after Golden Path stabilization:
 - Large file streaming upload (currently 100 MiB limit, in-memory).
