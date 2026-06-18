@@ -272,6 +272,23 @@ CREATE TABLE IF NOT EXISTS task_locks (
 CREATE INDEX IF NOT EXISTS idx_task_locks_project_status ON task_locks(project_id, status);
 CREATE INDEX IF NOT EXISTS idx_task_locks_task ON task_locks(task_id);
 CREATE INDEX IF NOT EXISTS idx_discord_mappings_kind_role ON discord_mappings(conversation_kind, thread_role);
+
+CREATE TABLE IF NOT EXISTS merge_candidates (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    task_id INTEGER NOT NULL UNIQUE REFERENCES tasks(id) ON DELETE CASCADE,
+    branch_name TEXT,
+    base_commit TEXT,
+    head_commit TEXT,
+    status TEXT NOT NULL DEFAULT 'queued',
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    merged_at TEXT,
+    rejected_at TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_merge_candidates_project_status ON merge_candidates(project_id, status);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_merge_candidates_task ON merge_candidates(task_id);
 """
 
 PROJECT_COLUMNS = {

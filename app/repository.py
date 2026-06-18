@@ -1611,6 +1611,29 @@ class Repository:
                 """,
                 (final_status, payload.retry_count, final_status, timestamp, timestamp, task_id),
             )
+            if final_status == "success":
+                project = self._project_for_task(task_id)
+                if project:
+                    project_id = project["id"]
+                    branch_name = task.get("branch") or None
+                    self.conn.execute(
+                        """
+                        INSERT INTO merge_candidates (
+                            project_id, task_id, branch_name, base_commit, head_commit,
+                            status, created_at, updated_at
+                        )
+                        VALUES (?, ?, ?, ?, NULL, 'queued', ?, ?)
+                        ON CONFLICT(task_id) DO NOTHING
+                        """,
+                        (
+                            project_id,
+                            task_id,
+                            branch_name,
+                            task.get("base_commit"),
+                            timestamp,
+                            timestamp,
+                        ),
+                    )
             self._add_task_event(task_id, "reported", f"{worker_id} reported {final_status}")
             if stale_msg and final_status == "needs_rebase":
                 self._add_task_event(task_id, "needs_rebase", stale_msg)
@@ -1789,3 +1812,14 @@ class Repository:
             """,
             (role or worker["role"], machine_id, status, timestamp, timestamp, worker_id),
         )
+
+    def list_merge_candidates(self, project_id: int) -> list[dict[str, Any]]:
+        rows = self.conn.execute(
+            """
+            SELECT * FROM merge_candidates
+            WHERE project_id = ?
+            ORDER BY id ASC
+            """,
+            (project_id,),
+        ).fetchall()
+        return [row_to_dict(row) or {} for row in rows]

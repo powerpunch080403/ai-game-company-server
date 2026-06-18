@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends
 
 from app.api.deps import get_repo, not_found
 from app.repository import Repository
-from app.schemas import EpicCreate, ProjectConfigUpdate, ProjectCreate, SubEpicCreate
+from app.schemas import EpicCreate, ProjectConfigUpdate, ProjectCreate, SubEpicCreate, MergeCandidateRead
 
 
 router = APIRouter()
@@ -56,5 +56,15 @@ def create_epic(project_id: int, payload: EpicCreate, repo: Repository = Depends
 def create_sub_epic(epic_id: int, payload: SubEpicCreate, repo: Repository = Depends(get_repo)) -> dict:
     try:
         return repo.create_sub_epic(epic_id, payload)
+    except KeyError as exc:
+        raise not_found(exc) from exc
+
+
+@router.get("/projects/{project_id}/merge-candidates", response_model=list[MergeCandidateRead])
+def list_merge_candidates(project_id: int, repo: Repository = Depends(get_repo)) -> list[dict]:
+    try:
+        # Check project existence
+        repo.get_project(project_id)
+        return repo.list_merge_candidates(project_id)
     except KeyError as exc:
         raise not_found(exc) from exc

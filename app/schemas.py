@@ -283,3 +283,17 @@ class DiscordContextStatusRequest(BaseModel):
     archive_reason: str = "Thread compacted after context threshold."
     continuation_discord_thread_id: str | None = None
     continuation_notes: str = ""
+
+
+class MergeCandidateRead(BaseModel):
+    id: int
+    project_id: int
+    task_id: int
+    branch_name: str | None = None
+    base_commit: str | None = None
+    head_commit: str | None = None
+    status: str
+    created_at: str
+    updated_at: str
+    merged_at: str | None = None
+    rejected_at: str | None = None

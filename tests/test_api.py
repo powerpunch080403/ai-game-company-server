@@ -2005,3 +2005,262 @@ def test_lock_prevention_null_expires_at_blocks(client: TestClient) -> None:
     leased2_res = client.post("/workers/worker-2/lease", json={"role": "code_worker", "lease_minutes": 30})
     assert leased2_res.status_code == 204
 
+
+# ---------------------------------------------------------------------------
+# Merge Candidate Queue Tests
+# ---------------------------------------------------------------------------
+
+def test_merge_candidate_creation_on_success(client: TestClient) -> None:
+    # A. Successful task completion/report creates exactly one queued merge candidate.
+    sub_epic_id = _make_dummy_project_sub_epic(client)
+    
+    # We also need to extract project_id
+    project_res = client.get("/projects").json()
+    project_id = project_res[-1]["id"]  # Last created project
+
+    task = client.post(f"/sub-epics/{sub_epic_id}/tasks", json={
+        "role": "code_worker",
+        "goal": "Successful task goal",
+        "requirements": ["X"],
+        "success_criteria": ["Y"],
+        "estimated_minutes": 15,
+        "branch": "worker/success-branch",
+        "write_scope": ["src/player.py"],
+    }).json()
+
+    # Lease task
+    client.post("/workers/worker-mc/lease", json={"role": "code_worker", "lease_minutes": 30}).json()
+
+    # Report completion
+    report = _report_payload("success")
+    report["changed_files"] = ["src/player.py"]
+    completed = client.post(f"/workers/worker-mc/tasks/{task['id']}/report", json=report).json()
+    assert completed["status"] == "success"
+
+    # Verify endpoint lists exactly one merge candidate
+    candidates = client.get(f"/projects/{project_id}/merge-candidates").json()
+    assert len(candidates) == 1
+    mc = candidates[0]
+    assert mc["task_id"] == task["id"]
+    assert mc["project_id"] == project_id
+    assert mc["branch_name"] == "worker/success-branch"
+    assert mc["status"] == "queued"
+    assert mc["base_commit"] is None  # Since workspace is not a real git repo
+    assert mc["head_commit"] is None
+
+
+def test_merge_candidate_no_creation_on_needs_rebase(client: TestClient, tmp_path: Path) -> None:
+    # B. needs_rebase completion/report does not create a merge candidate.
+    remote, _workspace = make_git_repo(tmp_path)
+    source = tmp_path / "source"
+
+    proj_id, sub_epic_id = _make_project_with_repo(client, source, remote)
+
+    task = client.post(f"/sub-epics/{sub_epic_id}/tasks", json={
+        "role": "code_worker",
+        "goal": "Rebase task goal",
+        "requirements": ["X"],
+        "success_criteria": ["Y"],
+        "estimated_minutes": 15,
+        "branch": "worker/rebase-branch",
+    }).json()
+
+    # Lease task (sets base_commit)
+    leased = client.post("/workers/worker-rebase/lease", json={"role": "code_worker", "lease_minutes": 30}).json()
+    assert leased["base_commit"] is not None
+
+    # Advance main
+    (source / "NEW.md").write_text("new\n", encoding="utf-8")
+    git(["add", "NEW.md"], cwd=source)
+    git(["commit", "-m", "Advance main"], cwd=source)
+
+    # Report success -> status becomes needs_rebase
+    completed = client.post(
+        f"/workers/worker-rebase/tasks/{task['id']}/report",
+        json=_report_payload("success"),
+    ).json()
+    assert completed["status"] == "needs_rebase"
+
+    # Verify no merge candidate was created
+    candidates = client.get(f"/projects/{proj_id}/merge-candidates").json()
+    assert len(candidates) == 0
+
+
+def test_merge_candidate_no_creation_on_scope_violation(client: TestClient) -> None:
+    # C. scope_violation completion/report does not create a merge candidate.
+    sub_epic_id = _make_dummy_project_sub_epic(client)
+    project_res = client.get("/projects").json()
+    project_id = project_res[-1]["id"]
+
+    task = client.post(f"/sub-epics/{sub_epic_id}/tasks", json={
+        "role": "code_worker",
+        "goal": "Scope violation task",
+        "requirements": ["X"],
+        "success_criteria": ["Y"],
+        "estimated_minutes": 15,
+        "branch": "worker/violation-mc",
+        "write_scope": ["src/player.py"],
+    }).json()
+
+    # Lease task
+    client.post("/workers/worker-violation/lease", json={"role": "code_worker", "lease_minutes": 30}).json()
+
+    # Report completion with scope violation
+    report = _report_payload("success")
+    report["changed_files"] = ["src/player.py", "src/enemy.py"]
+    completed = client.post(f"/workers/worker-violation/tasks/{task['id']}/report", json=report).json()
+    assert completed["status"] == "scope_violation"
+
+    # Verify no merge candidate was created
+    candidates = client.get(f"/projects/{project_id}/merge-candidates").json()
+    assert len(candidates) == 0
+
+
+def test_merge_candidate_idempotence(client: TestClient) -> None:
+    # D. Candidate creation is idempotent and does not duplicate by task_id.
+    sub_epic_id = _make_dummy_project_sub_epic(client)
+    project_res = client.get("/projects").json()
+    project_id = project_res[-1]["id"]
+
+    task = client.post(f"/sub-epics/{sub_epic_id}/tasks", json={
+        "role": "code_worker",
+        "goal": "Idempotence task",
+        "requirements": ["X"],
+        "success_criteria": ["Y"],
+        "estimated_minutes": 15,
+        "branch": "worker/idempotent-mc",
+        "write_scope": ["src/player.py"],
+    }).json()
+
+    # Lease task
+    client.post("/workers/worker-idempotent/lease", json={"role": "code_worker", "lease_minutes": 30}).json()
+
+    # Report completion first time
+    report = _report_payload("success")
+    report["changed_files"] = ["src/player.py"]
+    completed = client.post(f"/workers/worker-idempotent/tasks/{task['id']}/report", json=report).json()
+    assert completed["status"] == "success"
+
+    # Verify one candidate
+    candidates1 = client.get(f"/projects/{project_id}/merge-candidates").json()
+    assert len(candidates1) == 1
+
+    # Simulate/re-trigger repository direct DB insert or just manual call if we want to test db uniqueness constraint
+    repo = app.dependency_overrides[get_repo]()
+    timestamp = "2026-06-18T10:00:00Z"
+    # Execute insert with same task_id, should not crash, should be ignored due to ON CONFLICT DO NOTHING
+    repo.conn.execute(
+        """
+        INSERT INTO merge_candidates (
+            project_id, task_id, branch_name, base_commit, head_commit,
+            status, created_at, updated_at
+        )
+        VALUES (?, ?, 'another-branch', NULL, NULL, 'queued', ?, ?)
+        ON CONFLICT(task_id) DO NOTHING
+        """,
+        (project_id, task["id"], timestamp, timestamp)
+    )
+    repo.conn.commit()
+
+    # Verify still only one candidate exists
+    candidates2 = client.get(f"/projects/{project_id}/merge-candidates").json()
+    assert len(candidates2) == 1
+    assert candidates2[0]["branch_name"] == "worker/idempotent-mc"  # Check original value preserved
+
+
+def test_merge_candidates_list_by_project(client: TestClient) -> None:
+    # E. Lists candidates for the correct project only.
+    # Create Project A
+    sub_epic_id_a = _make_dummy_project_sub_epic(client)
+    project_res = client.get("/projects").json()
+    proj_a_id = project_res[-1]["id"]
+
+    task_a = client.post(f"/sub-epics/{sub_epic_id_a}/tasks", json={
+        "role": "code_worker",
+        "goal": "Project A task",
+        "requirements": ["X"],
+        "success_criteria": ["Y"],
+        "estimated_minutes": 15,
+        "branch": "worker/proj-a",
+        "write_scope": ["src/player.py"],
+    }).json()
+
+    # Create Project B
+    sub_epic_id_b = _make_dummy_project_sub_epic(client)
+    project_res = client.get("/projects").json()
+    proj_b_id = project_res[-1]["id"]
+
+    task_b = client.post(f"/sub-epics/{sub_epic_id_b}/tasks", json={
+        "role": "code_worker",
+        "goal": "Project B task",
+        "requirements": ["X"],
+        "success_criteria": ["Y"],
+        "estimated_minutes": 15,
+        "branch": "worker/proj-b",
+        "write_scope": ["src/player.py"],
+    }).json()
+
+    # Lease task A and report success
+    client.post("/workers/worker-a/lease", json={"role": "code_worker", "lease_minutes": 30}).json()
+    report = _report_payload("success")
+    report["changed_files"] = ["src/player.py"]
+    client.post(f"/workers/worker-a/tasks/{task_a['id']}/report", json=report).json()
+
+    # Lease task B and report success
+    client.post("/workers/worker-b/lease", json={"role": "code_worker", "lease_minutes": 30}).json()
+    client.post(f"/workers/worker-b/tasks/{task_b['id']}/report", json=report).json()
+
+    # List Project A candidates
+    candidates_a = client.get(f"/projects/{proj_a_id}/merge-candidates").json()
+    assert len(candidates_a) == 1
+    assert candidates_a[0]["task_id"] == task_a["id"]
+
+    # List Project B candidates
+    candidates_b = client.get(f"/projects/{proj_b_id}/merge-candidates").json()
+    assert len(candidates_b) == 1
+    assert candidates_b[0]["task_id"] == task_b["id"]
+
+
+def test_merge_candidate_lock_release_behavior(client: TestClient) -> None:
+    # F. Existing lock release behavior still passes for successful completion.
+    sub_epic_id = _make_dummy_project_sub_epic(client)
+    
+    task1 = client.post(f"/sub-epics/{sub_epic_id}/tasks", json={
+        "role": "code_worker",
+        "goal": "Lock release task 1",
+        "requirements": ["X"],
+        "success_criteria": ["Y"],
+        "estimated_minutes": 15,
+        "branch": "worker/lock-rel-1",
+        "write_scope": ["src/player.py"],
+    }).json()
+
+    task2 = client.post(f"/sub-epics/{sub_epic_id}/tasks", json={
+        "role": "code_worker",
+        "goal": "Lock release task 2",
+        "requirements": ["X"],
+        "success_criteria": ["Y"],
+        "estimated_minutes": 15,
+        "branch": "worker/lock-rel-2",
+        "write_scope": ["src/player.py"],
+    }).json()
+
+    # Lease task 1 -> creates active lock on src/player.py
+    leased1 = client.post("/workers/worker-l1/lease", json={"role": "code_worker", "lease_minutes": 30}).json()
+    assert leased1["id"] == task1["id"]
+
+    # Try to lease task 2 -> should get 204 because it conflicts with task 1's lock
+    res2 = client.post("/workers/worker-l2/lease", json={"role": "code_worker", "lease_minutes": 30})
+    assert res2.status_code == 204
+
+    # Report completion on task 1 (succeeds, creates merge candidate and releases locks)
+    report = _report_payload("success")
+    report["changed_files"] = ["src/player.py"]
+    completed = client.post(f"/workers/worker-l1/tasks/{task1['id']}/report", json=report).json()
+    assert completed["status"] == "success"
+
+    # Now task 2 should be leasable because locks were released
+    leased2 = client.post("/workers/worker-l2/lease", json={"role": "code_worker", "lease_minutes": 30}).json()
+    assert leased2["id"] == task2["id"]
+
+
