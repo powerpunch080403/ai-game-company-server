@@ -434,6 +434,34 @@ POST /merge-candidates/{candidate_id}/execute
 
 `approved`는 owner가 이 후보를 향후 merge executor의 대상으로 승인했다는 뜻입니다. `rejected`는 owner가 이 후보를 폐기했다는 뜻입니다. 승인(approve) 및 반려(reject) 액션은 실제 Git merge를 수행하지 않습니다. 프로젝트 워크스페이스 내에서 실제 로컬 Git merge를 수행하려면 `/execute` 엔드포인트를 사용합니다 (병합을 실행하기 전에 자동으로 dry-run 준비 상태를 검증합니다).
 
+## V1 승인 스모크 테스트
+
+- **상태**: 오너 스모크 테스트 결과 대기 중 (Pending Owner smoke test result)
+- **최종 관문**: 오너 스모크 테스트가 실행되고 그 결과가 PASS로 기록된 이후에만 공식적으로 V1이 완료된 것으로 간주합니다.
+- **전환**: V1 스모크 테스트가 통과된 이후에 프로젝트는 공식적으로 V1.5 확장 단계로 진입합니다. 일부 V1.5 스타일의 인프라스트럭처가 이미 구현되어 있을 수 있으나, 공식적인 V1.5 단계는 V1 스모크 테스트 승인 이후에 시작됩니다.
+
+### 계획된 스모크 테스트 흐름
+V1이 공식적으로 완료되었다고 선언되기 전에, 오너는 실제 작동 환경의 E2E 워크플로우를 검증하는 스모크 테스트를 실행합니다:
+1. **오너가 계획 검색을 토대로 태스크를 생성합니다** (`POST /projects/{project_id}/tasks/from-plan`).
+2. Discord가 구성된 경우 **Discord 스레드가 개설됩니다**.
+3. **`task_thread_reference`가 정상적으로 저장됩니다**.
+4. **워커가 태스크를 대여합니다** (`POST /workers/{worker_id}/lease`).
+5. **워커가 완료 보고를 수행합니다** (`POST /workers/{worker_id}/tasks/{task_id}/report`).
+6. **서버가 `changed_files`를 `write_scope` 및 `forbidden_scope` 정책과 비교 검증합니다**.
+7. Discord가 구성된 경우 **Discord 스레드에 워커 보고 완료 요약이 포스팅됩니다**.
+8. **병합 후보가 큐에 등록됩니다** (`merge_candidates` 테이블).
+9. **오너가 후보를 승인/반려 처리할 수 있습니다** (`/approve` 또는 `/reject` 엔드포인트).
+10. **머지 실행 Dry-run 검증 API**가 머지 준비 완료 혹은 명확한 차단 사유를 보고합니다.
+
+### 부정 경로 검증 (Negative-Path Verification)
+* **범위 위반 보고** (허용되지 않은 영역을 수정한 결과 보고)는 태스크 상태를 `scope_violation`으로 설정해야 하며, 병합 후보(merge candidate)를 생성해서는 **안 됩니다**.
+
+### 스모크 테스트 결과 로그
+* **상태**: 대기 중 (Pending)
+* **날짜**: 미정 (TBD)
+* **오너 판단**: 미정 (TBD)
+* **비고**: 미정 (TBD)
+
 ## 오너 태스크 계획 및 Discord 스레드 워크플로우 (v1.5)
 
 ### 주요 워크플로우 단계

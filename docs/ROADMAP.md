@@ -60,7 +60,20 @@ Work that can be done locally:
 - Visual tool and MCP integration design.
 - README rewrite in clean UTF-8 Korean.
 - Local unit tests.
-- CLI UX improvements.
+- CLI UX improvements
+
+## V1 Acceptance Gate
+- **Status**: Pending Owner smoke test result
+- **Required Result**: PASS
+- **Result Location**: To be recorded in the smoke test result log under `README.md` once run.
+- **V1 Status**: Pending smoke test result
+
+The V1 release is considered complete only after the Owner runs a manual smoke test verifying the E2E workflow and the result is recorded as PASS.
+
+## V1.5 Transition
+- **Status**: Next Phase
+- **Focus**: Usability, Discord workflows, owner workflows, memory/indexing, smoke automation.
+- **Trigger**: Starts officially after V1 smoke test PASS. Note that some early V1.5-style infrastructure (like experimental schemas or skeleton endpoints) may already be present in the repository, but the official V1.5 phase starts only after V1 smoke acceptance.
 
 ## v1 Must Have
 
