@@ -54,6 +54,7 @@ Implemented:
 - Discord context compaction API with 260k estimated-token threshold.
 - Discord dry-run bridge to `/owner/runs`.
 - Engine-agnostic project template scaffold.
+- **v1.5 Owner Planning & Discord Thread Workflow**: read-only Project Search, Task Plan Search, Tasks From Plan with optional thread creation, task thread references, and best-effort worker report summary Discord posting.
 
 Not implemented yet:
 
@@ -446,6 +447,60 @@ POST /merge-candidates/{candidate_id}/execute
 ```
 
 `approved` means the owner accepted the candidate for a future merge executor. `rejected` means the owner discarded the candidate. The approve and reject actions do not perform a real Git merge. To execute a real local Git merge in the project workspace, use the `/execute` endpoint (which runs dry-run checks before executing the merge).
+
+## Owner Task Planning & Discord Thread Workflow (v1.5)
+
+### Main Workflow Steps
+The server coordinates task creation from planning search through worker execution and report posting as follows:
+1. **Project Search**: Inspects local workspaces using ripgrep to find relevant files.
+2. **Task Plan Search**: Suggests scopes (`read_scope`/`write_scope`) and draft prompt context.
+3. **Tasks From Plan**: Creates a task using the suggestions.
+4. **Discord Thread Creation (Optional)**: If `create_thread=true` is requested, the server creates a dedicated Discord task thread.
+5. **Thread Reference Storage**: Stores `task_thread_reference` mapping the task to the external thread.
+6. **Worker Lease**: Assigns the task, creating the worker branch, recording the `base_commit`, and locking files via `task_locks`.
+7. **Worker Report**: Worker submits a report; the server validates changed files against `write_scope` and `forbidden_scope`.
+8. **Discord Report Posting (Best-effort)**: Server posts a formatted report summary to the linked Discord thread.
+9. **Merge Candidate Queueing**: On report success, a queued merge candidate is automatically created.
+10. **Owner Approval/Rejection**: The owner reviews and approves or rejects the candidate.
+11. **Merge Execution**: Merges the branch after performing dry-run checks.
+
+### Endpoint Summary
+* `POST /projects/{project_id}/search`: Read-only ripgrep workspace search.
+* `POST /projects/{project_id}/task-plan/search`: Task planning search to generate context drafts and scope suggestions.
+* `POST /projects/{project_id}/tasks/from-plan`: Creates a task from planning search suggestions with optional Discord thread creation.
+* `PUT /tasks/{task_id}/thread-reference`: Manually link a task to an external thread.
+* `GET /tasks/{task_id}/thread-reference`: Retrieve the thread reference for a task.
+* `GET /projects/{project_id}/thread-references`: List all thread references for a project.
+* `POST /workers/{worker_id}/tasks/{task_id}/report`: Worker submits task reports (which triggers the best-effort Discord post).
+
+### Task Creation from Plan (`tasks/from-plan`) Details
+* `confirm=true` is required in the request payload.
+* `create_thread=false` preserves the default behavior without thread creation.
+* `create_thread=true` creates a Discord task thread (requires proper Discord configuration).
+* `thread_channel_id` can be provided to override the default channel.
+* Manual `thread_reference` and `create_thread=true` must not be used together.
+* If Discord thread creation fails during task creation, a `503 Service Unavailable` error is returned explicitly.
+* Discord report posting is best-effort and failures do not cause worker report submissions to fail.
+
+### Configuration Values
+Copy `.env.example` to `.env` to configure. **Do not commit `.env` to version control.**
+* `DISCORD_BOT_TOKEN`: The bot token for posting reports and creating threads.
+* `GAME_COMPANY_DISCORD_TASK_CHANNEL_ID`: Default channel ID where task threads are created.
+
+### Safety & Isolation Guarantees
+* **Exclusions**: Project search excludes sensitive paths such as `.env`, `.git`, `node_modules`, and cache folders by default.
+* **Scope Policy**: `write_scope` and `forbidden_scope` guard write access. Violations mark tasks as `scope_violation`.
+* **Locking**: `task_locks` prevent concurrent conflicting writes to overlapping scopes.
+* **Stale Work**: `base_commit` tracking detects if the default branch has moved, marking tasks as `needs_rebase` if outdated.
+* **Failure Isolation**: Discord posting and API errors are isolated; they do not fail the core task lifecycle or worker reports.
+* **Durable Indexing**: Raw logs/conversations reside in external providers (like Discord threads); the server only stores lightweight summary index references.
+
+### Current Non-Goals
+* No Project Reviewer automated agent implemented yet.
+* No automatic Discord history fetching or message ingestion yet.
+* No automatic LLM summarization of raw Discord threads yet.
+* No vector memory search (uses SQLite search).
+* No automatic final branch merge without manual Owner approval.
 
 ## Owner Run
 

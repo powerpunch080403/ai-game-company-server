@@ -154,6 +154,7 @@ Most of this is already implemented.
    - **Base Commit Tracking & Stale-Base Detection** — `base_commit` recorded on task lease/claim; `needs_rebase` status emitted on complete when default branch has advanced (v1, implemented)
    - **Write Scope & Scope Violation Detection** — `write_scope`, `read_scope`, and `forbidden_scope` pattern rules; `changed_files` checked on complete, emitting `scope_violation` if invalid (v1, implemented)
    - **Write Scope Conflict Prevention** — `task_locks` prevent overlapping active write scopes during lease/claim (v1, implemented)
+   - **Owner Planning & Discord Task Threads (v1.5, implemented)** — `tasks/from-plan` supports Project Search and Task Plan Search suggestions, optional `create_thread=true` Discord thread creation, and best-effort worker report summary Discord posting.
 
 ## v1.5 Later: Intermediate Multi-Node & Memory Expansion
 
