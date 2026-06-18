@@ -399,6 +399,29 @@ What was validated:
 After a successful run, the `rehearsal/` directory contains all intermediate
 files for inspection. Delete it with `Remove-Item -Recurse -Force .\rehearsal`.
 
+## Local Golden Path Safety Verification
+
+The core v1 safety path can be verified without Codex CLI, Discord Gateway, MCP, external workers, or remote services.
+
+The current local verification uses FastAPI endpoint tests through `TestClient`, so the flow still exercises the same API surface that owner/worker clients use. For git-related checks such as `base_commit`, the tests create a temporary local git repository with the existing `make_git_repo` helper.
+
+Example targeted verification command:
+
+```bash
+python -m pytest tests/test_api.py -k "test_lock_prevention_released_flow or test_multi_node_branch_naming or test_no_stale_base_when_unchanged"
+```
+
+This verifies:
+
+* `node_id`-based worker branch naming: `worker/{node_id}/{task_id}-{slug}`
+* API-based owner/worker task lifecycle without Discord
+* `base_commit` recording with a temporary local git workspace
+* successful completion when the base branch has not moved
+* write-scope lock creation and release behavior
+* lock release coverage for task completion/release/cancel/retry paths where covered
+
+Discord and Codex CLI remain useful operator/agent integrations, but they are not required to verify the server core lifecycle locally.
+
 ## Owner Run
 
 Create an Owner dry-run:
