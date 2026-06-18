@@ -363,3 +363,45 @@ class TaskPlanSearchResponse(BaseModel):
     prompt_context: str
     matches: list[TaskPlanSearchMatch]
     truncated: bool = False
+
+
+class TaskFromPlanRequest(BaseModel):
+    title: str
+    goal: str
+    queries: list[str]
+    glob: str | None = None
+    max_results_per_query: int = 20
+    max_files: int = 20
+    sub_epic_id: int | None = None
+    priority: int = 0
+    confirm: bool = False
+
+
+class TaskRead(BaseModel):
+    id: int
+    sub_epic_id: int | None = None
+    role: str
+    status: str
+    goal: str
+    requirements: list[str]
+    success_criteria: list[str]
+    estimated_minutes: int
+    memory_refs: list[str]
+    branch: str
+    retry_count: int
+    leased_by: str | None = None
+    leased_until: str | None = None
+    created_at: str
+    updated_at: str
+    started_at: str | None = None
+    completed_at: str | None = None
+    base_commit: str | None = None
+    write_scope: list[str] | None = None
+    read_scope: list[str] | None = None
+    forbidden_scope: list[str] | None = None
+
+
+class TaskFromPlanResponse(BaseModel):
+    task: TaskRead
+    plan: TaskPlanSearchResponse
+

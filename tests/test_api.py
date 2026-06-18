@@ -3147,6 +3147,217 @@ def test_task_plan_search_uses_project_search_security(client: TestClient, tmp_p
     assert response.status_code == 200
 
 
+def test_task_from_plan_creates_task_with_prompt_and_scopes(client: TestClient, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    import subprocess
+    def mock_run(cmd, *args, **kwargs):
+        return subprocess.CompletedProcess(cmd, 0, "src/player.py:1:class Player\n")
+
+    project_id, ws_dir = _setup_search_project(client, tmp_path, monkeypatch, mock_run)
+    (ws_dir / "src").mkdir(exist_ok=True)
+    (ws_dir / "src" / "player.py").write_text("class Player\n")
+
+    response = client.post(f"/projects/{project_id}/tasks/from-plan", json={
+        "title": "Fix movement physics",
+        "goal": "Fix gravity bug",
+        "queries": ["player"],
+        "confirm": True
+    })
+    assert response.status_code == 200
+    data = response.json()
+    assert "task" in data
+    assert "plan" in data
+
+    task = data["task"]
+    assert task["role"] == "code_worker"
+    assert "Fix gravity bug" in task["goal"]
+    assert "Relevant files found" in task["goal"]
+    assert "- src/player.py" in task["goal"]
+    assert task["write_scope"] == ["src/player.py"]
+    assert task["read_scope"] == ["src/player.py"]
+    assert ".env" in task["forbidden_scope"]
+
+
+def test_task_from_plan_requires_confirm(client: TestClient, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    import subprocess
+    def mock_run(cmd, *args, **kwargs):
+        return subprocess.CompletedProcess(cmd, 0, "src/player.py:1:class Player\n")
+
+    project_id, ws_dir = _setup_search_project(client, tmp_path, monkeypatch, mock_run)
+    (ws_dir / "src").mkdir(exist_ok=True)
+    (ws_dir / "src" / "player.py").write_text("class Player\n")
+
+    response = client.post(f"/projects/{project_id}/tasks/from-plan", json={
+        "title": "Fix movement physics",
+        "goal": "Fix gravity bug",
+        "queries": ["player"],
+        "confirm": False
+    })
+    assert response.status_code == 409
+    assert "confirm must be true" in response.json()["detail"]
+
+    tasks = client.get("/tasks").json()
+    assert len(tasks) == 0
+
+
+def test_task_from_plan_rejects_empty_write_scope(client: TestClient, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    import subprocess
+    def mock_run(cmd, *args, **kwargs):
+        return subprocess.CompletedProcess(cmd, 1, "")
+
+    project_id, ws_dir = _setup_search_project(client, tmp_path, monkeypatch, mock_run)
+
+    response = client.post(f"/projects/{project_id}/tasks/from-plan", json={
+        "title": "Fix movement physics",
+        "goal": "Fix gravity bug",
+        "queries": ["player"],
+        "confirm": True
+    })
+    assert response.status_code == 409
+    assert response.json()["detail"] == "no_write_scope_suggested"
+
+    tasks = client.get("/tasks").json()
+    assert len(tasks) == 0
+
+
+def test_task_from_plan_dedupes_queries_and_files(client: TestClient, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    import subprocess
+    def mock_run(cmd, *args, **kwargs):
+        return subprocess.CompletedProcess(cmd, 0, "src/player.py:1:class Player\n")
+
+    project_id, ws_dir = _setup_search_project(client, tmp_path, monkeypatch, mock_run)
+    (ws_dir / "src").mkdir(exist_ok=True)
+    (ws_dir / "src" / "player.py").write_text("class Player\n")
+
+    response = client.post(f"/projects/{project_id}/tasks/from-plan", json={
+        "title": "Fix movement physics",
+        "goal": "Fix gravity bug",
+        "queries": ["player", "  player  ", "player"],
+        "confirm": True
+    })
+    assert response.status_code == 200
+    data = response.json()
+    assert data["plan"]["queries"] == ["player"]
+    assert data["task"]["write_scope"] == ["src/player.py"]
+
+
+def test_task_from_plan_excludes_risky_files_from_write_scope(client: TestClient, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    import subprocess
+    def mock_run(cmd, *args, **kwargs):
+        return subprocess.CompletedProcess(cmd, 0, "src/player.py:1:m\npackage.json:1:m\n")
+
+    project_id, ws_dir = _setup_search_project(client, tmp_path, monkeypatch, mock_run)
+    (ws_dir / "src").mkdir(exist_ok=True)
+    (ws_dir / "src" / "player.py").write_text("m\n")
+    (ws_dir / "package.json").write_text("m\n")
+
+    response = client.post(f"/projects/{project_id}/tasks/from-plan", json={
+        "title": "Update dep and code",
+        "goal": "Fix bug",
+        "queries": ["m"],
+        "confirm": True
+    })
+    assert response.status_code == 200
+    task = response.json()["task"]
+    assert "src/player.py" in task["write_scope"]
+    assert "package.json" not in task["write_scope"]
+    assert "package.json" in task["read_scope"]
+
+
+def test_task_from_plan_uses_sub_epic_when_provided(client: TestClient, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    import subprocess
+    def mock_run(cmd, *args, **kwargs):
+        return subprocess.CompletedProcess(cmd, 0, "src/player.py:1:class Player\n")
+
+    project_id, ws_dir = _setup_search_project(client, tmp_path, monkeypatch, mock_run)
+    (ws_dir / "src").mkdir(exist_ok=True)
+    (ws_dir / "src" / "player.py").write_text("class Player\n")
+
+    epic = client.post(f"/projects/{project_id}/epics", json={"name": "Epic X"}).json()
+    sub_epic = client.post(f"/epics/{epic['id']}/sub-epics", json={"name": "SubEpic Y"}).json()
+    sub_epic_id = sub_epic["id"]
+
+    response = client.post(f"/projects/{project_id}/tasks/from-plan", json={
+        "title": "Task Y",
+        "goal": "Fix Y",
+        "queries": ["player"],
+        "sub_epic_id": sub_epic_id,
+        "confirm": True
+    })
+    assert response.status_code == 200
+    task = response.json()["task"]
+    assert task["sub_epic_id"] == sub_epic_id
+
+
+def test_task_from_plan_does_not_lease_or_lock(client: TestClient, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    import subprocess
+    def mock_run(cmd, *args, **kwargs):
+        return subprocess.CompletedProcess(cmd, 0, "src/player.py:1:class Player\n")
+
+    project_id, ws_dir = _setup_search_project(client, tmp_path, monkeypatch, mock_run)
+    (ws_dir / "src").mkdir(exist_ok=True)
+    (ws_dir / "src" / "player.py").write_text("class Player\n")
+
+    response = client.post(f"/projects/{project_id}/tasks/from-plan", json={
+        "title": "Task X",
+        "goal": "Fix X",
+        "queries": ["player"],
+        "confirm": True
+    })
+    assert response.status_code == 200
+    task = response.json()["task"]
+    assert task["status"] == "pending"
+    assert task["leased_by"] is None
+    assert task["leased_until"] is None
+
+    repo = app.dependency_overrides[get_repo]()
+    locks = repo.conn.execute("SELECT * FROM task_locks").fetchall()
+    assert len(locks) == 0
+
+    candidates = repo.conn.execute("SELECT * FROM merge_candidates").fetchall()
+    assert len(candidates) == 0
+
+
+def test_task_from_plan_does_not_modify_workspace(client: TestClient, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    import subprocess
+    def mock_run(cmd, *args, **kwargs):
+        return subprocess.CompletedProcess(cmd, 0, "src/player.py:1:class Player\n")
+
+    project_id, ws_dir = _setup_search_project(client, tmp_path, monkeypatch, mock_run)
+    (ws_dir / "src").mkdir(exist_ok=True)
+    (ws_dir / "src" / "player.py").write_text("class Player\n")
+
+    before_files = sorted(list(ws_dir.rglob("*")))
+    before_contents = {f: f.read_bytes() for f in before_files if f.is_file()}
+
+    response = client.post(f"/projects/{project_id}/tasks/from-plan", json={
+        "title": "Task X",
+        "goal": "Fix X",
+        "queries": ["player"],
+        "confirm": True
+    })
+    assert response.status_code == 200
+
+    after_files = sorted(list(ws_dir.rglob("*")))
+    after_contents = {f: f.read_bytes() for f in after_files if f.is_file()}
+
+    assert before_files == after_files
+    assert before_contents == after_contents
+
+
+def test_task_from_plan_missing_workspace_returns_conflict(client: TestClient) -> None:
+    project_bad = client.post("/projects", json={
+        "name": "Bad WS Project",
+        "workspace_path": "C:\\nonexistent_workspace_folder_xyz",
+    }).json()
+    response_bad = client.post(f"/projects/{project_bad['id']}/tasks/from-plan", json={
+        "title": "Task X",
+        "goal": "Fix X",
+        "queries": ["player"],
+        "confirm": True
+    })
+    assert response_bad.status_code == 409
+
+
 
 
 
