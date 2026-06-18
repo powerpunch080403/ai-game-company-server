@@ -4152,6 +4152,354 @@ def test_from_plan_create_thread_false_preserves_existing_behavior(client: TestC
         deps.settings = original_settings
 
 
+def test_discord_report_thread_posts_on_success_with_mocked_discord(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
+    sub_epic_id = _make_dummy_project_sub_epic(client)
+    task = client.post(f"/sub-epics/{sub_epic_id}/tasks", json={
+        "role": "code_worker",
+        "goal": "Test success report discord post",
+        "requirements": ["X"],
+        "success_criteria": ["Y"],
+        "estimated_minutes": 15,
+        "branch": "worker/success-report-post",
+        "write_scope": ["src/player.py"],
+    }).json()
+    task_id = task["id"]
+
+    client.put(f"/tasks/{task_id}/thread-reference", json={
+        "provider": "discord",
+        "thread_id": "thread-report-1",
+        "title": "Discussion"
+    })
+
+    leased = client.post("/workers/worker-node-x/lease", json={"role": "code_worker", "lease_minutes": 30}).json()
+    assert leased["id"] == task_id
+
+    from app.api import deps
+    original_settings = deps.settings
+    deps.settings = deps.Settings(
+        db_path=original_settings.db_path,
+        host=original_settings.host,
+        port=original_settings.port,
+        default_task_minutes=original_settings.default_task_minutes,
+        owner_recall_minutes=original_settings.owner_recall_minutes,
+        api_token="",
+        owner_token="",
+        worker_token="",
+        readonly_token="",
+        artifact_token="",
+        owner_command="",
+        owner_timeout_seconds=900,
+        owner_runs_dir=original_settings.owner_runs_dir,
+        artifact_root=original_settings.artifact_root,
+        max_artifact_upload_bytes=1024,
+        context_compact_threshold_tokens=260000,
+        context_warning_tokens=220000,
+        context_chars_per_token=3.5,
+        discord_bot_token="fake_bot_token",
+        discord_task_channel_id="fake_channel"
+    )
+
+    called_args = []
+    def fake_post_msg(*, thread_id, message):
+        called_args.append({"thread_id": thread_id, "message": message})
+        return {"provider": "discord", "thread_id": thread_id, "message_id": "msg-111", "message_url": "url"}
+
+    from app.api.routes import tasks_workers as workers_route
+    monkeypatch.setattr(workers_route, "post_discord_thread_message", fake_post_msg)
+
+    try:
+        report = {
+            "status": "success",
+            "estimated_minutes": 15,
+            "actual_minutes": 10,
+            "productive_minutes": 10,
+            "error_minutes": 0,
+            "retry_count": 0,
+            "summary": "Completed moving logic",
+            "changed_files": ["src/player.py"]
+        }
+        res = client.post(f"/workers/worker-node-x/tasks/{task_id}/report", json=report)
+        assert res.status_code == 200
+        assert res.json()["status"] == "success"
+
+        assert len(called_args) == 1
+        assert called_args[0]["thread_id"] == "thread-report-1"
+        
+        msg = called_args[0]["message"]
+        assert f"Task #{task_id}" in msg
+        assert "report: success" in msg
+        assert "Completed moving logic" in msg
+        assert "- src/player.py" in msg
+        assert "Merge candidate:\nqueued" in msg
+
+        repo = app.dependency_overrides[get_repo]()
+        candidates = repo.conn.execute("SELECT * FROM merge_candidates WHERE task_id = ?", (task_id,)).fetchall()
+        assert len(candidates) == 1
+    finally:
+        deps.settings = original_settings
+
+
+def test_discord_report_thread_skips_when_no_thread_reference(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
+    sub_epic_id = _make_dummy_project_sub_epic(client)
+    task = client.post(f"/sub-epics/{sub_epic_id}/tasks", json={
+        "role": "code_worker",
+        "goal": "Test skip when no ref",
+        "requirements": ["X"],
+        "success_criteria": ["Y"],
+        "estimated_minutes": 15,
+        "branch": "worker/skip-no-ref",
+    }).json()
+    task_id = task["id"]
+
+    client.post("/workers/worker-node-y/lease", json={"role": "code_worker", "lease_minutes": 30})
+
+    post_called = False
+    def fake_post_msg(*args, **kwargs):
+        nonlocal post_called
+        post_called = True
+        return {}
+
+    from app.api.routes import tasks_workers as workers_route
+    monkeypatch.setattr(workers_route, "post_discord_thread_message", fake_post_msg)
+
+    report = {
+        "status": "success",
+        "estimated_minutes": 15,
+        "actual_minutes": 10,
+        "productive_minutes": 10,
+        "error_minutes": 0,
+        "retry_count": 0,
+        "summary": "Skip no ref",
+        "changed_files": []
+    }
+    res = client.post(f"/workers/worker-node-y/tasks/{task_id}/report", json=report)
+    assert res.status_code == 200
+    assert not post_called
+
+
+def test_discord_report_thread_skips_non_discord_provider(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
+    sub_epic_id = _make_dummy_project_sub_epic(client)
+    task = client.post(f"/sub-epics/{sub_epic_id}/tasks", json={
+        "role": "code_worker",
+        "goal": "Test skip non discord",
+        "requirements": ["X"],
+        "success_criteria": ["Y"],
+        "estimated_minutes": 15,
+        "branch": "worker/skip-non-discord",
+    }).json()
+    task_id = task["id"]
+
+    repo = app.dependency_overrides[get_repo]()
+    from app.schemas import TaskThreadReferenceUpsert
+    repo.upsert_task_thread_reference(task_id, TaskThreadReferenceUpsert(
+        provider="github",
+        thread_id="issue-42",
+        title="GitHub Issue"
+    ))
+
+    client.post("/workers/worker-node-z/lease", json={"role": "code_worker", "lease_minutes": 30})
+
+    post_called = False
+    def fake_post_msg(*args, **kwargs):
+        nonlocal post_called
+        post_called = True
+        return {}
+
+    from app.api.routes import tasks_workers as workers_route
+    monkeypatch.setattr(workers_route, "post_discord_thread_message", fake_post_msg)
+
+    report = {
+        "status": "success",
+        "estimated_minutes": 15,
+        "actual_minutes": 10,
+        "productive_minutes": 10,
+        "error_minutes": 0,
+        "retry_count": 0,
+        "summary": "Skip non discord",
+        "changed_files": []
+    }
+    res = client.post(f"/workers/worker-node-z/tasks/{task_id}/report", json=report)
+    assert res.status_code == 200
+    assert not post_called
+
+
+def test_discord_report_thread_failure_does_not_fail_report(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
+    sub_epic_id = _make_dummy_project_sub_epic(client)
+    task = client.post(f"/sub-epics/{sub_epic_id}/tasks", json={
+        "role": "code_worker",
+        "goal": "Test fail post does not block report",
+        "requirements": ["X"],
+        "success_criteria": ["Y"],
+        "estimated_minutes": 15,
+        "branch": "worker/fail-post",
+    }).json()
+    task_id = task["id"]
+
+    client.put(f"/tasks/{task_id}/thread-reference", json={
+        "provider": "discord",
+        "thread_id": "thread-fail",
+        "title": "Discussion"
+    })
+
+    client.post("/workers/worker-node-fail/lease", json={"role": "code_worker", "lease_minutes": 30})
+
+    def fake_post_msg_error(*args, **kwargs):
+        raise RuntimeError("Discord post message failed")
+
+    from app.api.routes import tasks_workers as workers_route
+    monkeypatch.setattr(workers_route, "post_discord_thread_message", fake_post_msg_error)
+
+    report = {
+        "status": "success",
+        "estimated_minutes": 15,
+        "actual_minutes": 10,
+        "productive_minutes": 10,
+        "error_minutes": 0,
+        "retry_count": 0,
+        "summary": "Success report even if post fails",
+        "changed_files": []
+    }
+    res = client.post(f"/workers/worker-node-fail/tasks/{task_id}/report", json=report)
+    assert res.status_code == 200
+    assert res.json()["status"] == "success"
+
+
+def test_discord_report_thread_includes_scope_violation_without_merge_candidate(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
+    sub_epic_id = _make_dummy_project_sub_epic(client)
+    task = client.post(f"/sub-epics/{sub_epic_id}/tasks", json={
+        "role": "code_worker",
+        "goal": "Test scope violation post",
+        "requirements": ["X"],
+        "success_criteria": ["Y"],
+        "estimated_minutes": 15,
+        "branch": "worker/scope-violation-post",
+        "write_scope": ["src/player.py"],
+    }).json()
+    task_id = task["id"]
+
+    client.put(f"/tasks/{task_id}/thread-reference", json={
+        "provider": "discord",
+        "thread_id": "thread-violation",
+        "title": "Discussion"
+    })
+
+    client.post("/workers/worker-node-violation/lease", json={"role": "code_worker", "lease_minutes": 30})
+
+    called_message = None
+    def fake_post_msg(*, thread_id, message):
+        nonlocal called_message
+        called_message = message
+        return {}
+
+    from app.api.routes import tasks_workers as workers_route
+    monkeypatch.setattr(workers_route, "post_discord_thread_message", fake_post_msg)
+
+    report = {
+        "status": "success",
+        "estimated_minutes": 15,
+        "actual_minutes": 10,
+        "productive_minutes": 10,
+        "error_minutes": 0,
+        "retry_count": 0,
+        "summary": "Scope violation report",
+        "changed_files": ["config.json"]
+    }
+    res = client.post(f"/workers/worker-node-violation/tasks/{task_id}/report", json=report)
+    assert res.status_code == 200
+    assert res.json()["status"] == "scope_violation"
+
+    assert "report: scope_violation" in called_message
+    assert "Merge candidate:\nnone" in called_message
+    assert "Scope violation: modified files" in called_message
+
+    repo = app.dependency_overrides[get_repo]()
+    candidates = repo.conn.execute("SELECT * FROM merge_candidates WHERE task_id = ?", (task_id,)).fetchall()
+    assert len(candidates) == 0
+
+
+def test_discord_report_thread_missing_token_does_not_fail_report(client: TestClient) -> None:
+    from app.api import deps
+    original_settings = deps.settings
+    deps.settings = deps.Settings(
+        db_path=original_settings.db_path,
+        host=original_settings.host,
+        port=original_settings.port,
+        default_task_minutes=original_settings.default_task_minutes,
+        owner_recall_minutes=original_settings.owner_recall_minutes,
+        api_token="",
+        owner_token="",
+        worker_token="",
+        readonly_token="",
+        artifact_token="",
+        owner_command="",
+        owner_timeout_seconds=900,
+        owner_runs_dir=original_settings.owner_runs_dir,
+        artifact_root=original_settings.artifact_root,
+        max_artifact_upload_bytes=1024,
+        context_compact_threshold_tokens=260000,
+        context_warning_tokens=220000,
+        context_chars_per_token=3.5,
+        discord_bot_token="",
+        discord_task_channel_id="fake_channel"
+    )
+
+    sub_epic_id = _make_dummy_project_sub_epic(client)
+    task = client.post(f"/sub-epics/{sub_epic_id}/tasks", json={
+        "role": "code_worker",
+        "goal": "Test missing token report",
+        "requirements": ["X"],
+        "success_criteria": ["Y"],
+        "estimated_minutes": 15,
+        "branch": "worker/missing-token",
+    }).json()
+    task_id = task["id"]
+
+    client.put(f"/tasks/{task_id}/thread-reference", json={
+        "provider": "discord",
+        "thread_id": "thread-missing-token",
+        "title": "Discussion"
+    })
+
+    client.post("/workers/worker-node-token/lease", json={"role": "code_worker", "lease_minutes": 30})
+
+    try:
+        report = {
+            "status": "success",
+            "estimated_minutes": 15,
+            "actual_minutes": 10,
+            "productive_minutes": 10,
+            "error_minutes": 0,
+            "retry_count": 0,
+            "summary": "Success report with no token",
+            "changed_files": []
+        }
+        res = client.post(f"/workers/worker-node-token/tasks/{task_id}/report", json=report)
+        assert res.status_code == 200
+        assert res.json()["status"] == "success"
+    finally:
+        deps.settings = original_settings
+
+
+def test_format_task_report_thread_message_is_deterministic() -> None:
+    from app.discord_threads import format_task_report_thread_message
+    
+    msg = format_task_report_thread_message(
+        task_id=99,
+        title="worker/test-branch",
+        status="success",
+        summary="A deterministic summary of work done.",
+        changed_files=["src/main.py", "tests/test_main.py"],
+        merge_candidate_status="queued",
+        violation_reason=None
+    )
+    
+    assert "Task #99 (worker/test-branch) report: success" in msg
+    assert "Summary:\nA deterministic summary of work done." in msg
+    assert "Changed files:\n- src/main.py\n- tests/test_main.py" in msg
+    assert "Merge candidate:\nqueued" in msg
+    assert "Notes:\nNone" in msg
+
+
 
 
 

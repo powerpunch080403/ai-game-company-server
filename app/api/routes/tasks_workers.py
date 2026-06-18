@@ -5,6 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from app.api.deps import get_repo, not_found
 from app.repository import Repository
 from app.schemas import TaskCreate, WorkerLeaseRequest, WorkerReportCreate, WorkerTaskClaimRequest, TaskThreadReferenceUpsert, TaskThreadReferenceRead
+from app.discord_threads import format_task_report_thread_message, post_discord_thread_message
 
 
 router = APIRouter()
@@ -100,7 +101,33 @@ def report_task(
     repo: Repository = Depends(get_repo),
 ) -> dict:
     try:
-        return repo.complete_task(task_id, worker_id, payload)
+        res = repo.complete_task(task_id, worker_id, payload)
+
+        try:
+            ref = repo.get_task_thread_reference(task_id)
+            if ref and ref.get("provider") == "discord" and ref.get("thread_id"):
+                mc_status = "queued" if res.get("status") == "success" else "none"
+
+                violation_reason = None
+                if res.get("status") == "scope_violation":
+                    violation_reason = "Scope violation: modified files outside allowed policy"
+                elif res.get("status") == "needs_rebase":
+                    violation_reason = "base moved; rebase required before merge"
+
+                msg = format_task_report_thread_message(
+                    task_id=task_id,
+                    title=res.get("branch") or None,
+                    status=res.get("status"),
+                    summary=payload.summary or None,
+                    changed_files=payload.changed_files if payload.changed_files is not None else payload.files_changed or [],
+                    merge_candidate_status=mc_status,
+                    violation_reason=violation_reason
+                )
+                post_discord_thread_message(thread_id=ref["thread_id"], message=msg)
+        except Exception:
+            pass
+
+        return res
     except KeyError as exc:
         raise not_found(exc) from exc
     except ValueError as exc:
