@@ -408,6 +408,29 @@ python -m pytest tests/test_api.py -k "test_lock_prevention_released_flow or tes
 
 Discord와 Codex CLI는 운영자/에이전트 통합에는 유용하지만, 서버 핵심 생명주기를 로컬에서 검증하는 데 필수는 아닙니다.
 
+## Merge Candidate 검토 흐름
+
+워커 작업이 최종 `success` 상태로 완료되면, 서버는 그 작업을 곧바로 머지된 것으로 취급하지 않고 queued 상태의 merge candidate로 등록합니다.
+
+최소 검토 흐름은 다음과 같습니다.
+
+```text
+task success
+-> merge candidate queued
+-> owner approve/reject
+-> future merge executor
+```
+
+사용 가능한 로컬 API 엔드포인트는 다음과 같습니다.
+
+```text
+GET /projects/{project_id}/merge-candidates
+POST /merge-candidates/{candidate_id}/approve
+POST /merge-candidates/{candidate_id}/reject
+```
+
+`approved`는 owner가 이 후보를 향후 merge executor의 대상으로 승인했다는 뜻입니다. `rejected`는 owner가 이 후보를 폐기했다는 뜻입니다. 이 검토 액션들은 실제 Git merge를 수행하지 않으며 `merged_at`도 설정하지 않습니다.
+
 ## Owner Run
 
 오너 드라이런 생성 예시:

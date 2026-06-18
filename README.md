@@ -422,6 +422,29 @@ This verifies:
 
 Discord and Codex CLI remain useful operator/agent integrations, but they are not required to verify the server core lifecycle locally.
 
+## Merge Candidate Review Flow
+
+When a worker task completes with final status `success`, the server creates a queued merge candidate instead of treating the task as implicitly merged.
+
+The minimal review flow is:
+
+```text
+task success
+-> merge candidate queued
+-> owner approve/reject
+-> future merge executor
+```
+
+Available local API endpoints:
+
+```text
+GET /projects/{project_id}/merge-candidates
+POST /merge-candidates/{candidate_id}/approve
+POST /merge-candidates/{candidate_id}/reject
+```
+
+`approved` means the owner accepted the candidate for a future merge executor. `rejected` means the owner discarded the candidate. These review actions do not perform a real Git merge and do not set `merged_at`.
+
 ## Owner Run
 
 Create an Owner dry-run:
