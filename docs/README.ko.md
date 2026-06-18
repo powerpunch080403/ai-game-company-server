@@ -385,6 +385,29 @@ What was validated:
 
 성공적으로 실행을 마친 뒤 `rehearsal/` 디렉토리에는 검사를 위한 모든 중간 파일들이 남겨집니다. 디렉토리를 삭제하려면 `Remove-Item -Recurse -Force .\rehearsal` 명령을 사용하십시오.
 
+## 로컬 Golden Path 안전성 검증
+
+v1 서버의 핵심 안전성 경로는 Codex CLI, Discord Gateway, MCP, 외부 워커, 원격 서비스 없이도 로컬에서 검증할 수 있습니다.
+
+현재 로컬 검증은 FastAPI `TestClient`를 통한 엔드포인트 테스트를 사용합니다. 따라서 owner/worker 클라이언트가 사용하는 것과 같은 HTTP API 표면을 실행합니다. `base_commit` 같은 Git 관련 검증은 기존 `make_git_repo` 헬퍼로 임시 로컬 Git 저장소를 만들어 수행합니다.
+
+대표 타깃 검증 명령은 다음과 같습니다.
+
+```bash
+python -m pytest tests/test_api.py -k "test_lock_prevention_released_flow or test_multi_node_branch_naming or test_no_stale_base_when_unchanged"
+```
+
+이 검증은 다음을 확인합니다.
+
+* `node_id` 기반 워커 브랜치 이름: `worker/{node_id}/{task_id}-{slug}`
+* Discord 없이 API 기반 owner/worker 작업 생명주기 실행
+* 임시 로컬 Git 작업공간을 통한 `base_commit` 기록
+* 기준 브랜치가 이동하지 않았을 때의 정상 완료 경로
+* write-scope lock 생성 및 해제 동작
+* 테스트가 다루는 범위 안에서 task completion/release/cancel/retry 경로의 lock release 동작
+
+Discord와 Codex CLI는 운영자/에이전트 통합에는 유용하지만, 서버 핵심 생명주기를 로컬에서 검증하는 데 필수는 아닙니다.
+
 ## Owner Run
 
 오너 드라이런 생성 예시:
