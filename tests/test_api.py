@@ -3829,7 +3829,7 @@ def test_from_plan_create_thread_creates_reference_with_mocked_discord(client: T
 
     from app.api import deps
     original_settings = deps.settings
-    deps.settings = deps.Settings(
+    new_settings = deps.Settings(
         db_path=original_settings.db_path,
         host=original_settings.host,
         port=original_settings.port,
@@ -3851,6 +3851,9 @@ def test_from_plan_create_thread_creates_reference_with_mocked_discord(client: T
         discord_bot_token="fake_bot_token",
         discord_task_channel_id="fake_default_channel_id"
     )
+    deps.settings = new_settings
+    old_settings_override = app.dependency_overrides.get(get_settings)
+    app.dependency_overrides[get_settings] = lambda: new_settings
 
     called_args = {}
     def fake_create(*, channel_id, task_id, title, initial_message):
@@ -3894,6 +3897,10 @@ def test_from_plan_create_thread_creates_reference_with_mocked_discord(client: T
         assert get_res.json()["thread_id"] == "thread-123"
     finally:
         deps.settings = original_settings
+        if old_settings_override:
+            app.dependency_overrides[get_settings] = old_settings_override
+        else:
+            app.dependency_overrides.pop(get_settings, None)
 
 
 def test_from_plan_create_thread_posts_initial_task_context(client: TestClient, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -3907,7 +3914,7 @@ def test_from_plan_create_thread_posts_initial_task_context(client: TestClient, 
 
     from app.api import deps
     original_settings = deps.settings
-    deps.settings = deps.Settings(
+    new_settings = deps.Settings(
         db_path=original_settings.db_path,
         host=original_settings.host,
         port=original_settings.port,
@@ -3929,6 +3936,9 @@ def test_from_plan_create_thread_posts_initial_task_context(client: TestClient, 
         discord_bot_token="fake_bot_token",
         discord_task_channel_id="fake_default_channel_id"
     )
+    deps.settings = new_settings
+    old_settings_override = app.dependency_overrides.get(get_settings)
+    app.dependency_overrides[get_settings] = lambda: new_settings
 
     captured_message = None
     def fake_create(*, channel_id, task_id, title, initial_message):
@@ -3970,6 +3980,10 @@ def test_from_plan_create_thread_posts_initial_task_context(client: TestClient, 
         assert "- Do not modify forbidden files." in captured_message
     finally:
         deps.settings = original_settings
+        if old_settings_override:
+            app.dependency_overrides[get_settings] = old_settings_override
+        else:
+            app.dependency_overrides.pop(get_settings, None)
 
 
 def test_from_plan_create_thread_requires_discord_channel(client: TestClient, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -3983,7 +3997,7 @@ def test_from_plan_create_thread_requires_discord_channel(client: TestClient, tm
 
     from app.api import deps
     original_settings = deps.settings
-    deps.settings = deps.Settings(
+    new_settings = deps.Settings(
         db_path=original_settings.db_path,
         host=original_settings.host,
         port=original_settings.port,
@@ -4005,6 +4019,9 @@ def test_from_plan_create_thread_requires_discord_channel(client: TestClient, tm
         discord_bot_token="fake_bot_token",
         discord_task_channel_id=""
     )
+    deps.settings = new_settings
+    old_settings_override = app.dependency_overrides.get(get_settings)
+    app.dependency_overrides[get_settings] = lambda: new_settings
 
     try:
         response = client.post(f"/projects/{project_id}/tasks/from-plan", json={
@@ -4018,6 +4035,10 @@ def test_from_plan_create_thread_requires_discord_channel(client: TestClient, tm
         assert "discord_thread_creation_not_configured" in response.json()["detail"]
     finally:
         deps.settings = original_settings
+        if old_settings_override:
+            app.dependency_overrides[get_settings] = old_settings_override
+        else:
+            app.dependency_overrides.pop(get_settings, None)
 
 
 def test_from_plan_rejects_manual_thread_reference_with_create_thread(client: TestClient, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -4055,7 +4076,7 @@ def test_from_plan_create_thread_failure_does_not_create_fake_reference(client: 
 
     from app.api import deps
     original_settings = deps.settings
-    deps.settings = deps.Settings(
+    new_settings = deps.Settings(
         db_path=original_settings.db_path,
         host=original_settings.host,
         port=original_settings.port,
@@ -4077,6 +4098,9 @@ def test_from_plan_create_thread_failure_does_not_create_fake_reference(client: 
         discord_bot_token="fake_bot_token",
         discord_task_channel_id="fake_default_channel_id"
     )
+    deps.settings = new_settings
+    old_settings_override = app.dependency_overrides.get(get_settings)
+    app.dependency_overrides[get_settings] = lambda: new_settings
 
     def failing_create(*args, **kwargs):
         raise RuntimeError("Discord API Error")
@@ -4100,6 +4124,10 @@ def test_from_plan_create_thread_failure_does_not_create_fake_reference(client: 
         assert len(refs) == 0
     finally:
         deps.settings = original_settings
+        if old_settings_override:
+            app.dependency_overrides[get_settings] = old_settings_override
+        else:
+            app.dependency_overrides.pop(get_settings, None)
 
 
 def test_from_plan_create_thread_false_preserves_existing_behavior(client: TestClient, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -4113,7 +4141,7 @@ def test_from_plan_create_thread_false_preserves_existing_behavior(client: TestC
 
     from app.api import deps
     original_settings = deps.settings
-    deps.settings = deps.Settings(
+    new_settings = deps.Settings(
         db_path=original_settings.db_path,
         host=original_settings.host,
         port=original_settings.port,
@@ -4135,6 +4163,9 @@ def test_from_plan_create_thread_false_preserves_existing_behavior(client: TestC
         discord_bot_token="",
         discord_task_channel_id=""
     )
+    deps.settings = new_settings
+    old_settings_override = app.dependency_overrides.get(get_settings)
+    app.dependency_overrides[get_settings] = lambda: new_settings
 
     try:
         response = client.post(f"/projects/{project_id}/tasks/from-plan", json={
@@ -4150,6 +4181,10 @@ def test_from_plan_create_thread_false_preserves_existing_behavior(client: TestC
         assert data["thread_reference"] is None
     finally:
         deps.settings = original_settings
+        if old_settings_override:
+            app.dependency_overrides[get_settings] = old_settings_override
+        else:
+            app.dependency_overrides.pop(get_settings, None)
 
 
 def test_discord_report_thread_posts_on_success_with_mocked_discord(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -4417,10 +4452,10 @@ def test_discord_report_thread_includes_scope_violation_without_merge_candidate(
     assert len(candidates) == 0
 
 
-def test_discord_report_thread_missing_token_does_not_fail_report(client: TestClient) -> None:
+def test_discord_report_thread_missing_token_does_not_fail_report(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
     from app.api import deps
     original_settings = deps.settings
-    deps.settings = deps.Settings(
+    new_settings = deps.Settings(
         db_path=original_settings.db_path,
         host=original_settings.host,
         port=original_settings.port,
@@ -4442,6 +4477,8 @@ def test_discord_report_thread_missing_token_does_not_fail_report(client: TestCl
         discord_bot_token="",
         discord_task_channel_id="fake_channel"
     )
+    deps.settings = new_settings
+    monkeypatch.setattr("app.discord_threads.load_settings", lambda: new_settings)
 
     sub_epic_id = _make_dummy_project_sub_epic(client)
     task = client.post(f"/sub-epics/{sub_epic_id}/tasks", json={
