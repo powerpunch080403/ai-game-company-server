@@ -3358,6 +3358,153 @@ def test_task_from_plan_missing_workspace_returns_conflict(client: TestClient) -
     assert response_bad.status_code == 409
 
 
+def test_from_plan_lifecycle_reaches_success_and_merge_candidate(client: TestClient, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    import subprocess
+    orig_run = subprocess.run
+
+    def mock_run(cmd, *args, **kwargs):
+        if cmd[0] == "rg":
+            return subprocess.CompletedProcess(cmd, 0, "src/player.py:1:class Player:\n    def move(self):\n")
+        return orig_run(cmd, *args, **kwargs)
+
+    monkeypatch.setattr(subprocess, "run", mock_run)
+
+    remote, _workspace = make_git_repo(tmp_path)
+    source = tmp_path / "source"
+
+    # Add src/player.py to the workspace and commit it
+    (source / "src").mkdir(exist_ok=True)
+    (source / "src" / "player.py").write_text("class Player:\n    def move(self):\n        pass\n", encoding="utf-8")
+    git(["add", "src/player.py"], cwd=source)
+    git(["commit", "-m", "Add player file"], cwd=source)
+
+    project_id, sub_epic_id = _make_project_with_repo(client, source, remote)
+
+    response = client.post(f"/projects/{project_id}/tasks/from-plan", json={
+        "title": "Update player movement",
+        "goal": "Update player movement logic",
+        "queries": ["Player", "move"],
+        "glob": "src/**",
+        "sub_epic_id": sub_epic_id,
+        "confirm": True
+    })
+    assert response.status_code == 200
+    data = response.json()
+    task = data["task"]
+    task_id = task["id"]
+
+    assert "Update player movement logic" in task["goal"]
+    assert "src/player.py" in task["goal"]
+    assert "src/player.py" in task["read_scope"]
+    assert "src/player.py" in task["write_scope"]
+    assert ".env" in task["forbidden_scope"]
+
+    repo = app.dependency_overrides[get_repo]()
+    locks_before = repo.conn.execute("SELECT * FROM task_locks WHERE task_id = ? AND status = 'active'", (task_id,)).fetchall()
+    assert len(locks_before) == 0
+
+    candidates_before = repo.conn.execute("SELECT * FROM merge_candidates WHERE task_id = ?", (task_id,)).fetchall()
+    assert len(candidates_before) == 0
+
+    monkeypatch.setenv("GAME_COMPANY_NODE_ID", "friend-a")
+    leased = client.post("/workers/worker-node-1/lease", json={"role": "code_worker", "lease_minutes": 30})
+    assert leased.status_code == 200
+    leased_data = leased.json()
+    assert leased_data["id"] == task_id
+    assert "friend-a" in leased_data["branch"]
+    assert leased_data["base_commit"] is not None
+
+    locks_after = repo.conn.execute("SELECT * FROM task_locks WHERE task_id = ? AND status = 'active'", (task_id,)).fetchall()
+    assert len(locks_after) > 0
+
+    (source / "src" / "player.py").write_text("class Player:\n    def move(self):\n        print('moving')\n", encoding="utf-8")
+
+    report = {
+        "status": "success",
+        "estimated_minutes": 15,
+        "actual_minutes": 10,
+        "productive_minutes": 10,
+        "error_minutes": 0,
+        "retry_count": 0,
+        "summary": "Updated player movement logic.",
+        "changed_files": ["src/player.py"]
+    }
+    completed = client.post(f"/workers/worker-node-1/tasks/{task_id}/report", json=report)
+    assert completed.status_code == 200
+    assert completed.json()["status"] == "success"
+
+    # Verify task status in database is success
+    task_db = repo.conn.execute("SELECT status FROM tasks WHERE id = ?", (task_id,)).fetchone()
+    assert task_db["status"] == "success"
+
+    locks_final = repo.conn.execute("SELECT * FROM task_locks WHERE task_id = ? AND status = 'active'", (task_id,)).fetchall()
+    assert len(locks_final) == 0
+
+    candidates_after = [dict(r) for r in repo.conn.execute("SELECT * FROM merge_candidates WHERE task_id = ?", (task_id,)).fetchall()]
+    assert len(candidates_after) == 1
+    candidate = candidates_after[0]
+    assert candidate["status"] == "queued"
+    assert candidate["project_id"] == project_id
+
+    assert not (source / ".env").exists()
+
+
+def test_from_plan_lifecycle_scope_violation_does_not_create_merge_candidate(client: TestClient, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    import subprocess
+    orig_run = subprocess.run
+
+    def mock_run(cmd, *args, **kwargs):
+        if cmd[0] == "rg":
+            return subprocess.CompletedProcess(cmd, 0, "src/player.py:1:class Player\n")
+        return orig_run(cmd, *args, **kwargs)
+
+    monkeypatch.setattr(subprocess, "run", mock_run)
+
+    remote, _workspace = make_git_repo(tmp_path)
+    source = tmp_path / "source"
+
+    (source / "src").mkdir(exist_ok=True)
+    (source / "src" / "player.py").write_text("class Player:\n    pass\n", encoding="utf-8")
+    (source / "config.json").write_text("{}\n", encoding="utf-8")
+    git(["add", "src/player.py", "config.json"], cwd=source)
+    git(["commit", "-m", "Add files"], cwd=source)
+
+    project_id, sub_epic_id = _make_project_with_repo(client, source, remote)
+
+    response = client.post(f"/projects/{project_id}/tasks/from-plan", json={
+        "title": "Update player physics",
+        "goal": "Fix physics bug",
+        "queries": ["Player"],
+        "glob": "src/**",
+        "sub_epic_id": sub_epic_id,
+        "confirm": True
+    })
+    assert response.status_code == 200
+    task_id = response.json()["task"]["id"]
+
+    client.post("/workers/worker-node-2/lease", json={"role": "code_worker", "lease_minutes": 30})
+
+    report = {
+        "status": "success",
+        "estimated_minutes": 15,
+        "actual_minutes": 10,
+        "productive_minutes": 10,
+        "error_minutes": 0,
+        "retry_count": 0,
+        "summary": "Updated physics but modified config.",
+        "changed_files": ["config.json"]
+    }
+    completed = client.post(f"/workers/worker-node-2/tasks/{task_id}/report", json=report)
+    assert completed.status_code == 200
+    assert completed.json()["status"] == "scope_violation"
+
+    repo = app.dependency_overrides[get_repo]()
+    candidates = repo.conn.execute("SELECT * FROM merge_candidates WHERE task_id = ?", (task_id,)).fetchall()
+    assert len(candidates) == 0
+
+
+
+
 
 
 
