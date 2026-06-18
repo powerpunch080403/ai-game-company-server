@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 
 from app.api.deps import get_repo, not_found
 from app.repository import Repository
-from app.schemas import TaskCreate, WorkerLeaseRequest, WorkerReportCreate, WorkerTaskClaimRequest
+from app.schemas import TaskCreate, WorkerLeaseRequest, WorkerReportCreate, WorkerTaskClaimRequest, TaskThreadReferenceUpsert, TaskThreadReferenceRead
 
 
 router = APIRouter()
@@ -105,3 +105,31 @@ def report_task(
         raise not_found(exc) from exc
     except ValueError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+@router.put("/tasks/{task_id}/thread-reference", response_model=TaskThreadReferenceRead)
+def upsert_task_thread_reference(
+    task_id: int,
+    payload: TaskThreadReferenceUpsert,
+    repo: Repository = Depends(get_repo),
+) -> dict:
+    try:
+        return repo.upsert_task_thread_reference(task_id, payload)
+    except KeyError as exc:
+        raise not_found(exc) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+@router.get("/tasks/{task_id}/thread-reference", response_model=TaskThreadReferenceRead)
+def get_task_thread_reference(
+    task_id: int,
+    repo: Repository = Depends(get_repo),
+) -> dict:
+    try:
+        ref = repo.get_task_thread_reference(task_id)
+        if ref is None:
+            raise HTTPException(status_code=404, detail="thread_reference_not_found")
+        return ref
+    except KeyError as exc:
+        raise not_found(exc) from exc

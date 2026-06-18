@@ -289,6 +289,23 @@ CREATE TABLE IF NOT EXISTS merge_candidates (
 
 CREATE INDEX IF NOT EXISTS idx_merge_candidates_project_status ON merge_candidates(project_id, status);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_merge_candidates_task ON merge_candidates(task_id);
+
+CREATE TABLE IF NOT EXISTS task_thread_references (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    task_id INTEGER NOT NULL UNIQUE,
+    provider TEXT NOT NULL,
+    channel_id TEXT,
+    thread_id TEXT,
+    thread_url TEXT,
+    title TEXT,
+    summary TEXT,
+    created_by TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    last_message_at TEXT,
+    metadata_json TEXT
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_task_thread_references_task ON task_thread_references(task_id);
 """
 
 PROJECT_COLUMNS = {

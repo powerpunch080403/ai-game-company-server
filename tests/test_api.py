@@ -3503,6 +3503,321 @@ def test_from_plan_lifecycle_scope_violation_does_not_create_merge_candidate(cli
     assert len(candidates) == 0
 
 
+def test_task_thread_reference_upsert_and_get(client: TestClient) -> None:
+    sub_epic_id = _make_dummy_project_sub_epic(client)
+    project_res = client.get("/projects").json()
+    project_id = project_res[-1]["id"]
+    
+    task = client.post(f"/sub-epics/{sub_epic_id}/tasks", json={
+        "role": "code_worker",
+        "goal": "Test thread ref",
+        "requirements": ["X"],
+        "success_criteria": ["Y"],
+        "estimated_minutes": 15,
+        "branch": "worker/thread-ref-test",
+    }).json()
+    task_id = task["id"]
+
+    # PUT thread reference
+    payload = {
+        "provider": "discord",
+        "channel_id": "12345",
+        "thread_id": "67890",
+        "thread_url": "https://discord.com/channels/1/12345/67890",
+        "title": "Task Discussion",
+        "summary": "This is a summary of the task discussion.",
+        "created_by": "owner",
+        "metadata": {"tags": ["bug", "high-priority"]}
+    }
+    put_res = client.put(f"/tasks/{task_id}/thread-reference", json=payload)
+    assert put_res.status_code == 200
+    data = put_res.json()
+    assert data["task_id"] == task_id
+    assert data["project_id"] == project_id
+    assert data["provider"] == "discord"
+    assert data["thread_id"] == "67890"
+    assert data["thread_url"] == "https://discord.com/channels/1/12345/67890"
+    assert data["summary"] == "This is a summary of the task discussion."
+
+    # GET it
+    get_res = client.get(f"/tasks/{task_id}/thread-reference")
+    assert get_res.status_code == 200
+    get_data = get_res.json()
+    assert get_data["id"] == data["id"]
+    assert get_data["task_id"] == task_id
+    assert get_data["project_id"] == project_id
+    assert get_data["summary"] == "This is a summary of the task discussion."
+
+
+def test_task_thread_reference_update_preserves_created_at(client: TestClient) -> None:
+    sub_epic_id = _make_dummy_project_sub_epic(client)
+    task = client.post(f"/sub-epics/{sub_epic_id}/tasks", json={
+        "role": "code_worker",
+        "goal": "Test thread ref created_at",
+        "requirements": ["X"],
+        "success_criteria": ["Y"],
+        "estimated_minutes": 15,
+        "branch": "worker/thread-ref-created-at",
+    }).json()
+    task_id = task["id"]
+
+    payload1 = {
+        "provider": "discord",
+        "thread_id": "111",
+        "title": "Initial Title",
+        "summary": "Initial Summary"
+    }
+    put1 = client.put(f"/tasks/{task_id}/thread-reference", json=payload1).json()
+    created_at = put1["created_at"]
+    ref_id = put1["id"]
+
+    payload2 = {
+        "provider": "discord",
+        "thread_id": "111",
+        "title": "Updated Title",
+        "summary": "Updated Summary"
+    }
+    put2 = client.put(f"/tasks/{task_id}/thread-reference", json=payload2).json()
+    assert put2["id"] == ref_id
+    assert put2["created_at"] == created_at
+    assert put2["title"] == "Updated Title"
+    assert put2["summary"] == "Updated Summary"
+    assert put2["updated_at"] >= created_at
+
+
+def test_task_thread_reference_missing_task_returns_404(client: TestClient) -> None:
+    # PUT missing task
+    payload = {
+        "provider": "discord",
+        "thread_id": "123",
+        "title": "Missing"
+    }
+    res_put = client.put("/tasks/99999/thread-reference", json=payload)
+    assert res_put.status_code == 404
+
+    # GET missing task
+    res_get = client.get("/tasks/99999/thread-reference")
+    assert res_get.status_code == 404
+
+
+def test_task_thread_reference_get_missing_reference_returns_404(client: TestClient) -> None:
+    sub_epic_id = _make_dummy_project_sub_epic(client)
+    task = client.post(f"/sub-epics/{sub_epic_id}/tasks", json={
+        "role": "code_worker",
+        "goal": "Test missing ref",
+        "requirements": ["X"],
+        "success_criteria": ["Y"],
+        "estimated_minutes": 15,
+        "branch": "worker/missing-ref",
+    }).json()
+    
+    get_res = client.get(f"/tasks/{task['id']}/thread-reference")
+    assert get_res.status_code == 404
+    assert get_res.json()["detail"] == "thread_reference_not_found"
+
+
+def test_project_thread_references_lists_only_project_tasks(client: TestClient) -> None:
+    # Project A
+    sub_epic_a = _make_dummy_project_sub_epic(client)
+    proj_a_id = client.get("/projects").json()[-1]["id"]
+    task_a = client.post(f"/sub-epics/{sub_epic_a}/tasks", json={
+        "role": "code_worker",
+        "goal": "Task A",
+        "requirements": ["X"],
+        "success_criteria": ["Y"],
+        "estimated_minutes": 15,
+        "branch": "worker/task-a",
+    }).json()
+    client.put(f"/tasks/{task_a['id']}/thread-reference", json={"provider": "discord", "thread_id": "thread-a", "title": "A"})
+
+    # Project B
+    sub_epic_b = _make_dummy_project_sub_epic(client)
+    proj_b_id = client.get("/projects").json()[-1]["id"]
+    task_b = client.post(f"/sub-epics/{sub_epic_b}/tasks", json={
+        "role": "code_worker",
+        "goal": "Task B",
+        "requirements": ["X"],
+        "success_criteria": ["Y"],
+        "estimated_minutes": 15,
+        "branch": "worker/task-b",
+    }).json()
+    client.put(f"/tasks/{task_b['id']}/thread-reference", json={"provider": "discord", "thread_id": "thread-b", "title": "B"})
+
+    # List project A
+    res_a = client.get(f"/projects/{proj_a_id}/thread-references").json()
+    assert res_a["project_id"] == proj_a_id
+    assert len(res_a["references"]) == 1
+    assert res_a["references"][0]["thread_id"] == "thread-a"
+
+    # List project B
+    res_b = client.get(f"/projects/{proj_b_id}/thread-references").json()
+    assert res_b["project_id"] == proj_b_id
+    assert len(res_b["references"]) == 1
+    assert res_b["references"][0]["thread_id"] == "thread-b"
+
+
+def test_project_thread_references_query_searches_summary_and_title(client: TestClient) -> None:
+    sub_epic_id = _make_dummy_project_sub_epic(client)
+    project_id = client.get("/projects").json()[-1]["id"]
+
+    task1 = client.post(f"/sub-epics/{sub_epic_id}/tasks", json={
+        "role": "code_worker",
+        "goal": "Banana Goal",
+        "requirements": ["X"],
+        "success_criteria": ["Y"],
+        "estimated_minutes": 15,
+        "branch": "worker/banana",
+    }).json()
+    client.put(f"/tasks/{task1['id']}/thread-reference", json={"provider": "discord", "thread_id": "1", "title": "Fruit discussion", "summary": "We talked about bananas."})
+
+    task2 = client.post(f"/sub-epics/{sub_epic_id}/tasks", json={
+        "role": "code_worker",
+        "goal": "Apple Goal",
+        "requirements": ["X"],
+        "success_criteria": ["Y"],
+        "estimated_minutes": 15,
+        "branch": "worker/apple",
+    }).json()
+    client.put(f"/tasks/{task2['id']}/thread-reference", json={"provider": "discord", "thread_id": "2", "title": "Apple talk", "summary": "Discussed apples."})
+
+    # Query for "banana"
+    res1 = client.get(f"/projects/{project_id}/thread-references", params={"query": "banana"}).json()
+    assert len(res1["references"]) == 1
+    assert res1["references"][0]["thread_id"] == "1"
+
+    # Query for "Apple" (case-insensitive)
+    res2 = client.get(f"/projects/{project_id}/thread-references", params={"query": "Apple"}).json()
+    assert len(res2["references"]) == 1
+    assert res2["references"][0]["thread_id"] == "2"
+
+
+def test_project_thread_references_limit_truncates(client: TestClient) -> None:
+    sub_epic_id = _make_dummy_project_sub_epic(client)
+    project_id = client.get("/projects").json()[-1]["id"]
+
+    # create 3 tasks with thread references
+    for i in range(3):
+        t = client.post(f"/sub-epics/{sub_epic_id}/tasks", json={
+            "role": "code_worker",
+            "goal": f"Task {i}",
+            "requirements": ["X"],
+            "success_criteria": ["Y"],
+            "estimated_minutes": 15,
+            "branch": f"worker/limit-{i}",
+        }).json()
+        client.put(f"/tasks/{t['id']}/thread-reference", json={"provider": "discord", "thread_id": f"id-{i}", "title": f"Title {i}"})
+
+    res = client.get(f"/projects/{project_id}/thread-references", params={"limit": 2}).json()
+    assert len(res["references"]) == 2
+    assert res["truncated"] is True
+
+
+def test_task_thread_reference_metadata_round_trip(client: TestClient) -> None:
+    sub_epic_id = _make_dummy_project_sub_epic(client)
+    task = client.post(f"/sub-epics/{sub_epic_id}/tasks", json={
+        "role": "code_worker",
+        "goal": "Metadata test",
+        "requirements": ["X"],
+        "success_criteria": ["Y"],
+        "estimated_minutes": 15,
+        "branch": "worker/metadata",
+    }).json()
+
+    meta = {"nested": {"key": "val"}, "list": [1, 2, 3]}
+    put_res = client.put(f"/tasks/{task['id']}/thread-reference", json={
+        "provider": "discord",
+        "thread_id": "999",
+        "title": "Meta",
+        "metadata": meta
+    })
+    assert put_res.status_code == 200
+    assert put_res.json()["metadata"] == meta
+
+    get_res = client.get(f"/tasks/{task['id']}/thread-reference")
+    assert get_res.status_code == 200
+    assert get_res.json()["metadata"] == meta
+
+
+def test_task_from_plan_can_attach_thread_reference_if_supported(client: TestClient, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    import subprocess
+    def mock_run(cmd, *args, **kwargs):
+        return subprocess.CompletedProcess(cmd, 0, "src/player.py:1:class Player\n")
+
+    project_id, ws_dir = _setup_search_project(client, tmp_path, monkeypatch, mock_run)
+    (ws_dir / "src").mkdir(exist_ok=True)
+    (ws_dir / "src" / "player.py").write_text("class Player\n")
+
+    thread_ref_payload = {
+        "provider": "discord",
+        "channel_id": "111222",
+        "thread_id": "333444",
+        "thread_url": "https://discord.com/channels/1/111222/333444",
+        "title": "Search Suggestion Discussion",
+        "summary": "Discussing player movement suggestions."
+    }
+
+    response = client.post(f"/projects/{project_id}/tasks/from-plan", json={
+        "title": "Task with thread reference",
+        "goal": "Implement task from plan",
+        "queries": ["player"],
+        "confirm": True,
+        "thread_reference": thread_ref_payload
+    })
+    assert response.status_code == 200
+    data = response.json()
+    assert data["thread_reference"] is not None
+    assert data["thread_reference"]["thread_id"] == "333444"
+    assert data["thread_reference"]["project_id"] == project_id
+    assert data["thread_reference"]["task_id"] == data["task"]["id"]
+
+
+def test_thread_reference_does_not_modify_workspace(client: TestClient, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    import subprocess
+    def mock_run(cmd, *args, **kwargs):
+        return subprocess.CompletedProcess(cmd, 0, "src/player.py:1:class Player\n")
+
+    project_id, ws_dir = _setup_search_project(client, tmp_path, monkeypatch, mock_run)
+    (ws_dir / "src").mkdir(exist_ok=True)
+    (ws_dir / "src" / "player.py").write_text("class Player\n")
+
+    before_files = sorted(list(ws_dir.rglob("*")))
+    before_contents = {f: f.read_bytes() for f in before_files if f.is_file()}
+
+    # Create task from plan with thread reference
+    thread_ref_payload = {
+        "provider": "discord",
+        "thread_id": "999888",
+        "title": "Discussion No Modify Workspace",
+        "summary": "This should not write any files to workspace."
+    }
+    response = client.post(f"/projects/{project_id}/tasks/from-plan", json={
+        "title": "No Modify Workspace Task",
+        "goal": "Goal No Modify Workspace",
+        "queries": ["player"],
+        "confirm": True,
+        "thread_reference": thread_ref_payload
+    })
+    assert response.status_code == 200
+    task_id = response.json()["task"]["id"]
+
+    # PUT/GET references
+    client.put(f"/tasks/{task_id}/thread-reference", json={
+        "provider": "discord",
+        "thread_id": "999888",
+        "title": "Updated Discussion No Modify Workspace",
+        "summary": "Updated summary."
+    })
+    client.get(f"/tasks/{task_id}/thread-reference")
+    client.get(f"/projects/{project_id}/thread-references")
+
+    # verify workspace files are exactly identical
+    after_files = sorted(list(ws_dir.rglob("*")))
+    assert before_files == after_files
+    for f in after_files:
+        if f.is_file():
+            assert f.read_bytes() == before_contents[f]
+
+
 
 
 

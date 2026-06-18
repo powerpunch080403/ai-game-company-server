@@ -1,10 +1,10 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 
 from app.api.deps import get_repo, not_found
 from app.repository import Repository
-from app.schemas import EpicCreate, ProjectConfigUpdate, ProjectCreate, SubEpicCreate, MergeCandidateRead, MergeCandidateDryRunRead, MergeCandidateExecuteRead, ProjectSearchRequest, ProjectSearchResponse, TaskPlanSearchRequest, TaskPlanSearchResponse, TaskFromPlanRequest, TaskFromPlanResponse
+from app.schemas import EpicCreate, ProjectConfigUpdate, ProjectCreate, SubEpicCreate, MergeCandidateRead, MergeCandidateDryRunRead, MergeCandidateExecuteRead, ProjectSearchRequest, ProjectSearchResponse, TaskPlanSearchRequest, TaskPlanSearchResponse, TaskFromPlanRequest, TaskFromPlanResponse, TaskThreadReferenceRead, ProjectThreadReferenceSearchResponse
 
 
 router = APIRouter()
@@ -310,9 +310,14 @@ def task_from_plan(project_id: int, payload: TaskFromPlanRequest, repo: Reposito
         )
         task = repo.create_task(sub_epic_id, task_payload)
 
+        thread_ref = None
+        if payload.thread_reference:
+            thread_ref = repo.upsert_task_thread_reference(task["id"], payload.thread_reference)
+
         return {
             "task": task,
             "plan": plan,
+            "thread_reference": thread_ref,
         }
 
     except KeyError as exc:
@@ -321,5 +326,18 @@ def task_from_plan(project_id: int, payload: TaskFromPlanRequest, repo: Reposito
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     except FileNotFoundError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+
+@router.get("/projects/{project_id}/thread-references", response_model=ProjectThreadReferenceSearchResponse)
+def search_project_thread_references(
+    project_id: int,
+    query: str | None = Query(default=None),
+    limit: int = Query(default=50, ge=1, le=100),
+    repo: Repository = Depends(get_repo),
+) -> dict:
+    try:
+        return repo.search_project_thread_references(project_id, query=query, limit=limit)
+    except KeyError as exc:
+        raise not_found(exc) from exc
 
 

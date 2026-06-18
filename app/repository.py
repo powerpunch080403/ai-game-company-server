@@ -30,6 +30,7 @@ from app.schemas import (
     WorkerHeartbeat,
     WorkerUpsert,
     WorkerReportCreate,
+    TaskThreadReferenceUpsert,
 )
 
 
@@ -2205,6 +2206,138 @@ class Repository:
             "suggested_write_scope": suggested_write_scope,
             "prompt_context": prompt_context,
             "matches": matches,
+            "truncated": truncated
+        }
+
+    def upsert_task_thread_reference(self, task_id: int, data: TaskThreadReferenceUpsert) -> dict[str, Any]:
+        task = self.get_task(task_id)
+        project = self._project_for_task(task_id)
+        project_id = project["id"] if project else None
+        if project_id is None:
+            raise ValueError("Task is not attached to a project")
+
+        timestamp = now_iso()
+        metadata_str = None
+        if data.metadata is not None:
+            metadata_str = json.dumps(data.metadata)
+
+        row = self.conn.execute("SELECT * FROM task_thread_references WHERE task_id = ?", (task_id,)).fetchone()
+        if row is None:
+            self.conn.execute(
+                """
+                INSERT INTO task_thread_references (
+                    task_id, provider, channel_id, thread_id, thread_url, title, summary, created_by, created_at, updated_at, last_message_at, metadata_json
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    task_id,
+                    data.provider,
+                    data.channel_id,
+                    data.thread_id,
+                    data.thread_url,
+                    data.title,
+                    data.summary,
+                    data.created_by,
+                    timestamp,
+                    timestamp,
+                    data.last_message_at,
+                    metadata_str
+                )
+            )
+        else:
+            self.conn.execute(
+                """
+                UPDATE task_thread_references
+                SET provider = ?,
+                    channel_id = ?,
+                    thread_id = ?,
+                    thread_url = ?,
+                    title = ?,
+                    summary = ?,
+                    created_by = ?,
+                    updated_at = ?,
+                    last_message_at = ?,
+                    metadata_json = ?
+                WHERE task_id = ?
+                """,
+                (
+                    data.provider,
+                    data.channel_id,
+                    data.thread_id,
+                    data.thread_url,
+                    data.title,
+                    data.summary,
+                    data.created_by,
+                    timestamp,
+                    data.last_message_at,
+                    metadata_str,
+                    task_id
+                )
+            )
+        self.conn.commit()
+        return self.get_task_thread_reference(task_id)
+
+    def get_task_thread_reference(self, task_id: int) -> dict[str, Any] | None:
+        self.get_task(task_id)
+        project = self._project_for_task(task_id)
+        project_id = project["id"] if project else None
+
+        row = self.conn.execute("SELECT * FROM task_thread_references WHERE task_id = ?", (task_id,)).fetchone()
+        if row is None:
+            return None
+
+        d = row_to_dict(row) or {}
+        d["project_id"] = project_id
+        metadata_str = d.pop("metadata_json", None)
+        d["metadata"] = json.loads(metadata_str) if metadata_str else None
+        return d
+
+    def search_project_thread_references(self, project_id: int, query: str | None = None, limit: int = 50) -> dict[str, Any]:
+        self.get_project(project_id)
+        limit = min(max(limit, 1), 100)
+
+        sql = """
+            SELECT t.*, e.project_id
+            FROM task_thread_references t
+            JOIN tasks ON tasks.id = t.task_id
+            JOIN sub_epics s ON s.id = tasks.sub_epic_id
+            JOIN epics e ON e.id = s.epic_id
+            WHERE e.project_id = ?
+        """
+        params = [project_id]
+
+        if query:
+            q_like = f"%{query}%"
+            sql += """
+                AND (
+                    tasks.goal LIKE ? OR
+                    t.title LIKE ? OR
+                    t.summary LIKE ? OR
+                    t.thread_url LIKE ? OR
+                    t.thread_id LIKE ?
+                )
+            """
+            params.extend([q_like, q_like, q_like, q_like, q_like])
+
+        sql += " ORDER BY t.updated_at DESC LIMIT ?"
+        params.append(limit + 1)
+
+        rows = self.conn.execute(sql, params).fetchall()
+        truncated = len(rows) > limit
+        if truncated:
+            rows = rows[:limit]
+
+        references = []
+        for row in rows:
+            d = row_to_dict(row) or {}
+            metadata_str = d.pop("metadata_json", None)
+            d["metadata"] = json.loads(metadata_str) if metadata_str else None
+            references.append(d)
+
+        return {
+            "project_id": project_id,
+            "query": query,
+            "references": references,
             "truncated": truncated
         }
 

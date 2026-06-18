@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from typing import Literal
+from typing import Any, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 
 MemoryType = Literal[
@@ -365,6 +365,66 @@ class TaskPlanSearchResponse(BaseModel):
     truncated: bool = False
 
 
+class TaskThreadReferenceUpsert(BaseModel):
+    provider: str = "discord"
+    channel_id: str | None = None
+    thread_id: str | None = None
+    thread_url: str | None = None
+    title: str | None = None
+    summary: str | None = None
+    created_by: str | None = "owner"
+    last_message_at: str | None = None
+    metadata: dict[str, Any] | None = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def validate_and_strip(cls, data: Any) -> Any:
+        if isinstance(data, dict):
+            for k, v in list(data.items()):
+                if isinstance(v, str):
+                    data[k] = v.strip()
+            
+            provider = data.get("provider", "discord")
+            if isinstance(provider, str):
+                provider = provider.strip()
+                data["provider"] = provider
+            if not provider:
+                raise ValueError("provider must not be empty")
+            
+            thread_id = data.get("thread_id")
+            thread_url = data.get("thread_url")
+            summary = data.get("summary")
+            title = data.get("title")
+
+            if not any(x for x in [thread_id, thread_url, summary, title]):
+                raise ValueError("at least one of thread_id, thread_url, summary, or title must be present")
+        return data
+
+
+class TaskThreadReferenceRead(BaseModel):
+    id: int
+    task_id: int
+    project_id: int
+    provider: str
+    channel_id: str | None = None
+    thread_id: str | None = None
+    thread_url: str | None = None
+    title: str | None = None
+    summary: str | None = None
+    created_by: str | None = None
+    created_at: str
+    updated_at: str
+    last_message_at: str | None = None
+    metadata: dict[str, Any] | None = None
+
+
+class ProjectThreadReferenceSearchResponse(BaseModel):
+    project_id: int
+    query: str | None = None
+    references: list[TaskThreadReferenceRead]
+    truncated: bool = False
+
+
 class TaskFromPlanRequest(BaseModel):
     title: str
     goal: str
@@ -375,6 +435,7 @@ class TaskFromPlanRequest(BaseModel):
     sub_epic_id: int | None = None
     priority: int = 0
     confirm: bool = False
+    thread_reference: TaskThreadReferenceUpsert | None = None
 
 
 class TaskRead(BaseModel):
@@ -404,4 +465,5 @@ class TaskRead(BaseModel):
 class TaskFromPlanResponse(BaseModel):
     task: TaskRead
     plan: TaskPlanSearchResponse
+    thread_reference: TaskThreadReferenceRead | None = None
 
