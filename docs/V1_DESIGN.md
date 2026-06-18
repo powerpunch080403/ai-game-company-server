@@ -123,6 +123,10 @@ Specific task flow:
 
 Reports are rejected unless the reporting worker has leased or claimed the task.
 
+### Task Lease Invariant
+* **One task has at most one active lease at a time**.
+* A task is the atomic unit of worker responsibility. Allowing multiple workers to report against the same task simultaneously would make branch ownership, `base_commit` tracking, `changed_files` validation, `task_locks`, final status, and merge candidate creation ambiguous.
+
 ## Owner Lifecycle
 
 Owner responsibilities:

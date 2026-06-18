@@ -172,6 +172,10 @@ Most of this is already implemented.
 
 ## v1.5 Later: Intermediate Multi-Node & Memory Expansion
 
+- **Task Ownership and Multimodal Workers (V1.5+ planning only)**:
+  - Enforce the single-active-lease invariant on tasks to keep branch, locks, and merge tracking unambiguous.
+  - Represent multimodal features as multiple related tasks (e.g., separate image, voice, and code tasks) grouped under Epics/SubEpics.
+  - Candidate fields: `task_kind`, `required_worker_role`, `required_capabilities`, `task_group_id`/`work_package_id`, task dependency ordering, and modality-specific templates.
 - Vector search for memory.
 - Multiple parallel workers.
 - Test runner machine integration.

@@ -269,6 +269,39 @@ FastAPI:
 - Owns SQLite access.
 - Owns task state, memory, reports, approvals, artifacts, and registry APIs.
 
+## Task Ownership and Multimodal Workers
+
+### Task Ownership Invariant
+* **One task may have only one active worker lease at a time**.
+* A task is the atomic unit of worker responsibility.
+* Allowing multiple workers to report against the same task would make branch ownership, `base_commit` tracking, `changed_files` validation, `task_locks`, final status, and merge candidate creation ambiguous.
+
+### Multimodal Worker Model
+Multimodal work is represented as multiple related tasks, not one shared task. If a feature requires different modalities (code, image, audio, etc.), it must be split into multiple distinct tasks, each assigned to the responsible worker type.
+
+Example of splitting a feature (e.g., "Enemy character prototype"):
+1. **Task A: Generate enemy concept image** $\rightarrow$ `image_worker`
+2. **Task B: Create enemy voice line** $\rightarrow$ `voice_worker`
+3. **Task C: Implement enemy behavior** $\rightarrow$ `code_worker`
+4. **Task D: Integrate enemy assets** $\rightarrow$ `code_worker` or `integration_worker`
+
+These related tasks are grouped under the existing Epic/SubEpic structure, or a future `task_group` / `work_package` concept (planned for V1.5+ expansion).
+
+### Thread and Reference Implications
+* **Task threads are task-scoped**.
+* A task thread represents the conversation/log for exactly one task and its responsible worker.
+* The system is not designed for multiple workers sharing the same task thread.
+* **one task $\rightarrow$ one primary thread/reference**.
+* For related multimodal work: **one work package/Epic/SubEpic $\rightarrow$ multiple tasks $\rightarrow$ multiple task threads**.
+
+Future task thread metadata may include:
+* task kind
+* worker role
+* modality
+* provider
+* summary
+* artifact links
+
 ## Discord Operating Model
 
 Detailed design: [DISCORD_OPERATOR_CONSOLE.md](DISCORD_OPERATOR_CONSOLE.md).
