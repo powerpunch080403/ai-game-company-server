@@ -436,6 +436,8 @@ class TaskFromPlanRequest(BaseModel):
     priority: int = 0
     confirm: bool = False
     thread_reference: TaskThreadReferenceUpsert | None = None
+    create_thread: bool = False
+    thread_channel_id: str | None = None
 
 
 class TaskRead(BaseModel):

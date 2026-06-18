@@ -3818,6 +3818,340 @@ def test_thread_reference_does_not_modify_workspace(client: TestClient, tmp_path
             assert f.read_bytes() == before_contents[f]
 
 
+def test_from_plan_create_thread_creates_reference_with_mocked_discord(client: TestClient, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    import subprocess
+    def mock_run(cmd, *args, **kwargs):
+        return subprocess.CompletedProcess(cmd, 0, "src/player.py:1:class Player\n")
+
+    project_id, ws_dir = _setup_search_project(client, tmp_path, monkeypatch, mock_run)
+    (ws_dir / "src").mkdir(exist_ok=True)
+    (ws_dir / "src" / "player.py").write_text("class Player\n")
+
+    from app.api import deps
+    original_settings = deps.settings
+    deps.settings = deps.Settings(
+        db_path=original_settings.db_path,
+        host=original_settings.host,
+        port=original_settings.port,
+        default_task_minutes=original_settings.default_task_minutes,
+        owner_recall_minutes=original_settings.owner_recall_minutes,
+        api_token="",
+        owner_token="",
+        worker_token="",
+        readonly_token="",
+        artifact_token="",
+        owner_command="",
+        owner_timeout_seconds=900,
+        owner_runs_dir=original_settings.owner_runs_dir,
+        artifact_root=original_settings.artifact_root,
+        max_artifact_upload_bytes=1024,
+        context_compact_threshold_tokens=260000,
+        context_warning_tokens=220000,
+        context_chars_per_token=3.5,
+        discord_bot_token="fake_bot_token",
+        discord_task_channel_id="fake_default_channel_id"
+    )
+
+    called_args = {}
+    def fake_create(*, channel_id, task_id, title, initial_message):
+        called_args["channel_id"] = channel_id
+        called_args["task_id"] = task_id
+        called_args["title"] = title
+        called_args["initial_message"] = initial_message
+        return {
+            "provider": "discord",
+            "channel_id": channel_id,
+            "thread_id": "thread-123",
+            "thread_url": f"https://discord.com/channels/guild-1/{channel_id}/thread-123",
+            "title": title,
+            "summary": initial_message[:200]
+        }
+
+    from app.api.routes import projects as projects_route
+    monkeypatch.setattr(projects_route, "create_discord_task_thread", fake_create)
+
+    try:
+        response = client.post(f"/projects/{project_id}/tasks/from-plan", json={
+            "title": "Task Create Thread",
+            "goal": "Test discord thread creation flow",
+            "queries": ["player"],
+            "confirm": True,
+            "create_thread": True
+        })
+        assert response.status_code == 200
+        data = response.json()
+        assert data["thread_reference"] is not None
+        assert data["thread_reference"]["thread_id"] == "thread-123"
+        assert data["thread_reference"]["channel_id"] == "fake_default_channel_id"
+        
+        task_id = data["task"]["id"]
+        assert called_args["channel_id"] == "fake_default_channel_id"
+        assert called_args["task_id"] == task_id
+        assert called_args["title"] == "Task Create Thread"
+        
+        get_res = client.get(f"/tasks/{task_id}/thread-reference")
+        assert get_res.status_code == 200
+        assert get_res.json()["thread_id"] == "thread-123"
+    finally:
+        deps.settings = original_settings
+
+
+def test_from_plan_create_thread_posts_initial_task_context(client: TestClient, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    import subprocess
+    def mock_run(cmd, *args, **kwargs):
+        return subprocess.CompletedProcess(cmd, 0, "src/player.py:1:class Player\n")
+
+    project_id, ws_dir = _setup_search_project(client, tmp_path, monkeypatch, mock_run)
+    (ws_dir / "src").mkdir(exist_ok=True)
+    (ws_dir / "src" / "player.py").write_text("class Player\n")
+
+    from app.api import deps
+    original_settings = deps.settings
+    deps.settings = deps.Settings(
+        db_path=original_settings.db_path,
+        host=original_settings.host,
+        port=original_settings.port,
+        default_task_minutes=original_settings.default_task_minutes,
+        owner_recall_minutes=original_settings.owner_recall_minutes,
+        api_token="",
+        owner_token="",
+        worker_token="",
+        readonly_token="",
+        artifact_token="",
+        owner_command="",
+        owner_timeout_seconds=900,
+        owner_runs_dir=original_settings.owner_runs_dir,
+        artifact_root=original_settings.artifact_root,
+        max_artifact_upload_bytes=1024,
+        context_compact_threshold_tokens=260000,
+        context_warning_tokens=220000,
+        context_chars_per_token=3.5,
+        discord_bot_token="fake_bot_token",
+        discord_task_channel_id="fake_default_channel_id"
+    )
+
+    captured_message = None
+    def fake_create(*, channel_id, task_id, title, initial_message):
+        nonlocal captured_message
+        captured_message = initial_message
+        return {
+            "provider": "discord",
+            "channel_id": channel_id,
+            "thread_id": "thread-456",
+            "thread_url": f"https://discord.com/channels/guild-1/{channel_id}/thread-456",
+            "title": title,
+            "summary": initial_message[:200]
+        }
+
+    from app.api.routes import projects as projects_route
+    monkeypatch.setattr(projects_route, "create_discord_task_thread", fake_create)
+
+    try:
+        response = client.post(f"/projects/{project_id}/tasks/from-plan", json={
+            "title": "Movement Task",
+            "goal": "Implement player movement",
+            "queries": ["player"],
+            "confirm": True,
+            "create_thread": True,
+            "thread_channel_id": "custom_channel_id"
+        })
+        assert response.status_code == 200
+        task_id = response.json()["task"]["id"]
+        
+        assert f"Task #{task_id}: Movement Task" in captured_message
+        assert "Goal:\nImplement player movement" in captured_message
+        assert "Relevant files:\n- src/player.py" in captured_message
+        assert "Suggested read_scope:\n- src/player.py" in captured_message
+        assert "Suggested write_scope:\n- src/player.py" in captured_message
+        assert "Forbidden scope:\n- .env" in captured_message
+        assert "Worker instructions:" in captured_message
+        assert "- Work only inside write_scope." in captured_message
+        assert "- Report changed_files accurately." in captured_message
+        assert "- Do not modify forbidden files." in captured_message
+    finally:
+        deps.settings = original_settings
+
+
+def test_from_plan_create_thread_requires_discord_channel(client: TestClient, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    import subprocess
+    def mock_run(cmd, *args, **kwargs):
+        return subprocess.CompletedProcess(cmd, 0, "src/player.py:1:class Player\n")
+
+    project_id, ws_dir = _setup_search_project(client, tmp_path, monkeypatch, mock_run)
+    (ws_dir / "src").mkdir(exist_ok=True)
+    (ws_dir / "src" / "player.py").write_text("class Player\n")
+
+    from app.api import deps
+    original_settings = deps.settings
+    deps.settings = deps.Settings(
+        db_path=original_settings.db_path,
+        host=original_settings.host,
+        port=original_settings.port,
+        default_task_minutes=original_settings.default_task_minutes,
+        owner_recall_minutes=original_settings.owner_recall_minutes,
+        api_token="",
+        owner_token="",
+        worker_token="",
+        readonly_token="",
+        artifact_token="",
+        owner_command="",
+        owner_timeout_seconds=900,
+        owner_runs_dir=original_settings.owner_runs_dir,
+        artifact_root=original_settings.artifact_root,
+        max_artifact_upload_bytes=1024,
+        context_compact_threshold_tokens=260000,
+        context_warning_tokens=220000,
+        context_chars_per_token=3.5,
+        discord_bot_token="fake_bot_token",
+        discord_task_channel_id=""
+    )
+
+    try:
+        response = client.post(f"/projects/{project_id}/tasks/from-plan", json={
+            "title": "Task No Channel",
+            "goal": "Goal No Channel",
+            "queries": ["player"],
+            "confirm": True,
+            "create_thread": True
+        })
+        assert response.status_code == 409
+        assert "discord_thread_creation_not_configured" in response.json()["detail"]
+    finally:
+        deps.settings = original_settings
+
+
+def test_from_plan_rejects_manual_thread_reference_with_create_thread(client: TestClient, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    import subprocess
+    def mock_run(cmd, *args, **kwargs):
+        return subprocess.CompletedProcess(cmd, 0, "src/player.py:1:class Player\n")
+
+    project_id, ws_dir = _setup_search_project(client, tmp_path, monkeypatch, mock_run)
+    (ws_dir / "src").mkdir(exist_ok=True)
+    (ws_dir / "src" / "player.py").write_text("class Player\n")
+
+    response = client.post(f"/projects/{project_id}/tasks/from-plan", json={
+        "title": "Task Conflict",
+        "goal": "Goal Conflict",
+        "queries": ["player"],
+        "confirm": True,
+        "create_thread": True,
+        "thread_reference": {
+            "provider": "discord",
+            "thread_id": "manual-thread-id"
+        }
+    })
+    assert response.status_code == 409
+    assert "thread_reference_conflicts_with_create_thread" in response.json()["detail"]
+
+
+def test_from_plan_create_thread_failure_does_not_create_fake_reference(client: TestClient, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    import subprocess
+    def mock_run(cmd, *args, **kwargs):
+        return subprocess.CompletedProcess(cmd, 0, "src/player.py:1:class Player\n")
+
+    project_id, ws_dir = _setup_search_project(client, tmp_path, monkeypatch, mock_run)
+    (ws_dir / "src").mkdir(exist_ok=True)
+    (ws_dir / "src" / "player.py").write_text("class Player\n")
+
+    from app.api import deps
+    original_settings = deps.settings
+    deps.settings = deps.Settings(
+        db_path=original_settings.db_path,
+        host=original_settings.host,
+        port=original_settings.port,
+        default_task_minutes=original_settings.default_task_minutes,
+        owner_recall_minutes=original_settings.owner_recall_minutes,
+        api_token="",
+        owner_token="",
+        worker_token="",
+        readonly_token="",
+        artifact_token="",
+        owner_command="",
+        owner_timeout_seconds=900,
+        owner_runs_dir=original_settings.owner_runs_dir,
+        artifact_root=original_settings.artifact_root,
+        max_artifact_upload_bytes=1024,
+        context_compact_threshold_tokens=260000,
+        context_warning_tokens=220000,
+        context_chars_per_token=3.5,
+        discord_bot_token="fake_bot_token",
+        discord_task_channel_id="fake_default_channel_id"
+    )
+
+    def failing_create(*args, **kwargs):
+        raise RuntimeError("Discord API Error")
+
+    from app.api.routes import projects as projects_route
+    monkeypatch.setattr(projects_route, "create_discord_task_thread", failing_create)
+
+    try:
+        response = client.post(f"/projects/{project_id}/tasks/from-plan", json={
+            "title": "Failing Thread Task",
+            "goal": "Failing goal",
+            "queries": ["player"],
+            "confirm": True,
+            "create_thread": True
+        })
+        assert response.status_code == 503
+        assert "task_created_but_thread_creation_failed" in response.json()["detail"]
+        
+        repo = deps.get_repo()
+        refs = repo.conn.execute("SELECT * FROM task_thread_references").fetchall()
+        assert len(refs) == 0
+    finally:
+        deps.settings = original_settings
+
+
+def test_from_plan_create_thread_false_preserves_existing_behavior(client: TestClient, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    import subprocess
+    def mock_run(cmd, *args, **kwargs):
+        return subprocess.CompletedProcess(cmd, 0, "src/player.py:1:class Player\n")
+
+    project_id, ws_dir = _setup_search_project(client, tmp_path, monkeypatch, mock_run)
+    (ws_dir / "src").mkdir(exist_ok=True)
+    (ws_dir / "src" / "player.py").write_text("class Player\n")
+
+    from app.api import deps
+    original_settings = deps.settings
+    deps.settings = deps.Settings(
+        db_path=original_settings.db_path,
+        host=original_settings.host,
+        port=original_settings.port,
+        default_task_minutes=original_settings.default_task_minutes,
+        owner_recall_minutes=original_settings.owner_recall_minutes,
+        api_token="",
+        owner_token="",
+        worker_token="",
+        readonly_token="",
+        artifact_token="",
+        owner_command="",
+        owner_timeout_seconds=900,
+        owner_runs_dir=original_settings.owner_runs_dir,
+        artifact_root=original_settings.artifact_root,
+        max_artifact_upload_bytes=1024,
+        context_compact_threshold_tokens=260000,
+        context_warning_tokens=220000,
+        context_chars_per_token=3.5,
+        discord_bot_token="",
+        discord_task_channel_id=""
+    )
+
+    try:
+        response = client.post(f"/projects/{project_id}/tasks/from-plan", json={
+            "title": "Task No Thread",
+            "goal": "Test existing behavior works",
+            "queries": ["player"],
+            "confirm": True,
+            "create_thread": False
+        })
+        assert response.status_code == 200
+        data = response.json()
+        assert data["task"] is not None
+        assert data["thread_reference"] is None
+    finally:
+        deps.settings = original_settings
+
+
 
 
 

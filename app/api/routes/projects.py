@@ -2,9 +2,11 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 
-from app.api.deps import get_repo, not_found
+from app.api.deps import get_repo, get_settings, not_found
+from app.config import Settings
 from app.repository import Repository
-from app.schemas import EpicCreate, ProjectConfigUpdate, ProjectCreate, SubEpicCreate, MergeCandidateRead, MergeCandidateDryRunRead, MergeCandidateExecuteRead, ProjectSearchRequest, ProjectSearchResponse, TaskPlanSearchRequest, TaskPlanSearchResponse, TaskFromPlanRequest, TaskFromPlanResponse, TaskThreadReferenceRead, ProjectThreadReferenceSearchResponse
+from app.schemas import EpicCreate, ProjectConfigUpdate, ProjectCreate, SubEpicCreate, MergeCandidateRead, MergeCandidateDryRunRead, MergeCandidateExecuteRead, ProjectSearchRequest, ProjectSearchResponse, TaskPlanSearchRequest, TaskPlanSearchResponse, TaskFromPlanRequest, TaskFromPlanResponse, TaskThreadReferenceRead, ProjectThreadReferenceSearchResponse, TaskThreadReferenceUpsert
+from app.discord_threads import create_discord_task_thread
 
 
 router = APIRouter()
@@ -198,7 +200,12 @@ def task_plan_search(project_id: int, payload: TaskPlanSearchRequest, repo: Repo
 
 
 @router.post("/projects/{project_id}/tasks/from-plan", response_model=TaskFromPlanResponse)
-def task_from_plan(project_id: int, payload: TaskFromPlanRequest, repo: Repository = Depends(get_repo)) -> dict:
+def task_from_plan(
+    project_id: int,
+    payload: TaskFromPlanRequest,
+    repo: Repository = Depends(get_repo),
+    settings: Settings = Depends(get_settings),
+) -> dict:
     title = payload.title.strip() if payload.title else ""
     if not title:
         raise HTTPException(status_code=422, detail="title must not be empty")
@@ -206,6 +213,20 @@ def task_from_plan(project_id: int, payload: TaskFromPlanRequest, repo: Reposito
     goal = payload.goal.strip() if payload.goal else ""
     if not goal:
         raise HTTPException(status_code=422, detail="goal must not be empty")
+
+    if payload.create_thread and payload.thread_reference:
+        raise HTTPException(
+            status_code=409,
+            detail="thread_reference_conflicts_with_create_thread"
+        )
+
+    channel_id = payload.thread_channel_id or settings.discord_task_channel_id
+    if payload.create_thread:
+        if not settings.discord_bot_token or not channel_id:
+            raise HTTPException(
+                status_code=409,
+                detail="discord_thread_creation_not_configured"
+            )
 
     cleaned_queries = []
     seen = set()
@@ -311,7 +332,54 @@ def task_from_plan(project_id: int, payload: TaskFromPlanRequest, repo: Reposito
         task = repo.create_task(sub_epic_id, task_payload)
 
         thread_ref = None
-        if payload.thread_reference:
+        if payload.create_thread:
+            relevant_files_list = plan.get("suggested_files", [])
+            files_section = "\n".join(f"- {f}" for f in relevant_files_list) if relevant_files_list else "None"
+
+            read_scope_list = task_payload.read_scope or []
+            read_section = "\n".join(f"- {f}" for f in read_scope_list) if read_scope_list else "None"
+
+            write_scope_list = task_payload.write_scope or []
+            write_section = "\n".join(f"- {f}" for f in write_scope_list) if write_scope_list else "None"
+
+            forbidden_scope_list = task_payload.forbidden_scope or []
+            forbidden_section = "\n".join(f"- {f}" for f in forbidden_scope_list) if forbidden_scope_list else "None"
+
+            initial_message = (
+                f"Task #{task['id']}: {title}\n\n"
+                f"Goal:\n{goal}\n\n"
+                f"Relevant files:\n{files_section}\n\n"
+                f"Suggested read_scope:\n{read_section}\n\n"
+                f"Suggested write_scope:\n{write_section}\n\n"
+                f"Forbidden scope:\n{forbidden_section}\n\n"
+                f"Worker instructions:\n"
+                f"- Work only inside write_scope.\n"
+                f"- Report changed_files accurately.\n"
+                f"- Do not modify forbidden files."
+            )
+
+            try:
+                thread_data = create_discord_task_thread(
+                    channel_id=channel_id,
+                    task_id=task["id"],
+                    title=title,
+                    initial_message=initial_message
+                )
+                thread_ref_upsert = TaskThreadReferenceUpsert(
+                    provider=thread_data["provider"],
+                    channel_id=thread_data["channel_id"],
+                    thread_id=thread_data["thread_id"],
+                    thread_url=thread_data["thread_url"],
+                    title=thread_data["title"],
+                    summary=thread_data["summary"],
+                )
+                thread_ref = repo.upsert_task_thread_reference(task["id"], thread_ref_upsert)
+            except Exception as exc:
+                raise HTTPException(
+                    status_code=503,
+                    detail=f"task_created_but_thread_creation_failed: {task['id']}"
+                )
+        elif payload.thread_reference:
             thread_ref = repo.upsert_task_thread_reference(task["id"], payload.thread_reference)
 
         return {

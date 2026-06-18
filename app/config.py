@@ -31,6 +31,8 @@ class Settings:
     context_chars_per_token: float
     node_id: str = ""
     node_mode: str = "authority"
+    discord_bot_token: str = ""
+    discord_task_channel_id: str = ""
 
 
 def load_settings() -> Settings:
@@ -55,4 +57,6 @@ def load_settings() -> Settings:
         context_chars_per_token=float(os.getenv("GAME_COMPANY_CONTEXT_CHARS_PER_TOKEN", "3.5")),
         node_id=os.getenv("GAME_COMPANY_NODE_ID", ""),
         node_mode=os.getenv("GAME_COMPANY_NODE_MODE", "authority"),
+        discord_bot_token=os.getenv("DISCORD_BOT_TOKEN", ""),
+        discord_task_channel_id=os.getenv("GAME_COMPANY_DISCORD_TASK_CHANNEL_ID", ""),
     )
