@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException
 
 from app.api.deps import get_repo, not_found
 from app.repository import Repository
-from app.schemas import EpicCreate, ProjectConfigUpdate, ProjectCreate, SubEpicCreate, MergeCandidateRead, MergeCandidateDryRunRead, MergeCandidateExecuteRead, ProjectSearchRequest, ProjectSearchResponse
+from app.schemas import EpicCreate, ProjectConfigUpdate, ProjectCreate, SubEpicCreate, MergeCandidateRead, MergeCandidateDryRunRead, MergeCandidateExecuteRead, ProjectSearchRequest, ProjectSearchResponse, TaskPlanSearchRequest, TaskPlanSearchResponse
 
 
 router = APIRouter()
@@ -153,3 +153,46 @@ def search_project(project_id: int, payload: ProjectSearchRequest, repo: Reposit
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     except FileNotFoundError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+
+@router.post("/projects/{project_id}/task-plan/search", response_model=TaskPlanSearchResponse)
+def task_plan_search(project_id: int, payload: TaskPlanSearchRequest, repo: Repository = Depends(get_repo)) -> dict:
+    goal = payload.goal.strip() if payload.goal else ""
+    if not goal:
+        raise HTTPException(status_code=422, detail="goal must not be empty")
+
+    cleaned_queries = []
+    seen = set()
+    for q in payload.queries:
+        qs = q.strip()
+        if qs and qs not in seen:
+            seen.add(qs)
+            cleaned_queries.append(qs)
+
+    if not cleaned_queries:
+        raise HTTPException(status_code=422, detail="queries must contain at least one non-empty query")
+
+    max_results_per_query = min(max(payload.max_results_per_query, 1), 50)
+    max_files = min(max(payload.max_files, 1), 50)
+
+    if payload.glob and (".." in payload.glob or payload.glob.startswith("/") or payload.glob.startswith("\\")):
+        raise HTTPException(status_code=422, detail="invalid glob pattern")
+
+    try:
+        # Check project existence
+        repo.get_project(project_id)
+        return repo.plan_task_search(
+            project_id=project_id,
+            goal=goal,
+            queries=cleaned_queries,
+            glob=payload.glob,
+            max_results_per_query=max_results_per_query,
+            max_files=max_files,
+        )
+    except KeyError as exc:
+        raise not_found(exc) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+

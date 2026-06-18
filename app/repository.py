@@ -2113,3 +2113,98 @@ class Repository:
             "results": results[:max_results],
             "truncated": truncated,
         }
+
+    def plan_task_search(
+        self,
+        project_id: int,
+        goal: str,
+        queries: list[str],
+        glob: str | None,
+        max_results_per_query: int,
+        max_files: int,
+    ) -> dict[str, Any]:
+        suggested_files = []
+        matches = []
+        truncated = False
+
+        for q in queries:
+            search_res = self.search_project_workspace(
+                project_id=project_id,
+                query=q,
+                glob=glob,
+                max_results=max_results_per_query
+            )
+            if search_res.get("truncated"):
+                truncated = True
+
+            for res in search_res.get("results", []):
+                match_item = {
+                    "query": q,
+                    "path": res["path"],
+                    "line": res["line"],
+                    "text": res["text"]
+                }
+                if match_item not in matches:
+                    matches.append(match_item)
+
+                path = res["path"]
+                if path not in suggested_files:
+                    if len(suggested_files) < max_files:
+                        suggested_files.append(path)
+                    else:
+                        truncated = True
+
+        def is_risky_file(path: str) -> bool:
+            p = path.replace("\\", "/").lower()
+            parts = p.split("/")
+            if any(part in (".git", ".github") for part in parts):
+                return True
+            basename = parts[-1]
+            exact_risky = {
+                "requirements.txt",
+                "pyproject.toml",
+                "package.json",
+                "package-lock.json",
+                "pnpm-lock.yaml",
+                "yarn.lock",
+                "dockerfile",
+                "docker-compose.yml",
+                "docker-compose.yaml",
+            }
+            if basename in exact_risky:
+                return True
+            if basename == ".env" or basename.startswith(".env."):
+                return True
+            return False
+
+        suggested_read_scope = list(suggested_files)
+        suggested_write_scope = [f for f in suggested_files if not is_risky_file(f)]
+
+        if suggested_files:
+            files_section = "\n".join(f"- {f}" for f in suggested_files)
+            read_section = "\n".join(f"- {f}" for f in suggested_read_scope)
+            write_section = "\n".join(f"- {f}" for f in suggested_write_scope)
+            prompt_context = (
+                f"Goal:\n{goal}\n\n"
+                f"Relevant files found:\n{files_section}\n\n"
+                f"Suggested read_scope:\n{read_section}\n\n"
+                f"Suggested write_scope:\n{write_section}"
+            )
+        else:
+            prompt_context = (
+                f"Goal:\n{goal}\n\n"
+                f"No relevant files found."
+            )
+
+        return {
+            "project_id": project_id,
+            "goal": goal,
+            "queries": queries,
+            "suggested_files": suggested_files,
+            "suggested_read_scope": suggested_read_scope,
+            "suggested_write_scope": suggested_write_scope,
+            "prompt_context": prompt_context,
+            "matches": matches,
+            "truncated": truncated
+        }
+

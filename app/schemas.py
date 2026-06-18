@@ -336,3 +336,30 @@ class ProjectSearchResponse(BaseModel):
     query: str
     results: list[ProjectSearchResult]
     truncated: bool = False
+
+
+class TaskPlanSearchRequest(BaseModel):
+    goal: str
+    queries: list[str]
+    glob: str | None = None
+    max_results_per_query: int = 20
+    max_files: int = 20
+
+
+class TaskPlanSearchMatch(BaseModel):
+    query: str
+    path: str
+    line: int
+    text: str
+
+
+class TaskPlanSearchResponse(BaseModel):
+    project_id: int
+    goal: str
+    queries: list[str]
+    suggested_files: list[str]
+    suggested_read_scope: list[str]
+    suggested_write_scope: list[str]
+    prompt_context: str
+    matches: list[TaskPlanSearchMatch]
+    truncated: bool = False

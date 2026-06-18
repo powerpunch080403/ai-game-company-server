@@ -2928,6 +2928,225 @@ def test_project_search_does_not_modify_workspace(client: TestClient, tmp_path: 
     assert before_contents == after_contents
 
 
+def test_task_plan_search_returns_suggested_files_and_scopes(client: TestClient, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    import subprocess
+    def mock_run(cmd, *args, **kwargs):
+        query = cmd[-1]
+        if query == "player":
+            return subprocess.CompletedProcess(cmd, 0, "src/player.py:1:class Player\n")
+        elif query == "physics":
+            return subprocess.CompletedProcess(cmd, 0, "src/physics.py:1:class Physics\n")
+        return subprocess.CompletedProcess(cmd, 1, "")
+
+    project_id, ws_dir = _setup_search_project(client, tmp_path, monkeypatch, mock_run)
+    (ws_dir / "src").mkdir(exist_ok=True)
+    (ws_dir / "src" / "player.py").write_text("class Player\n")
+    (ws_dir / "src" / "physics.py").write_text("class Physics\n")
+
+    response = client.post(f"/projects/{project_id}/task-plan/search", json={
+        "goal": "Fix player physics",
+        "queries": ["player", "physics"]
+    })
+    assert response.status_code == 200
+    data = response.json()
+    assert data["goal"] == "Fix player physics"
+    assert data["queries"] == ["player", "physics"]
+    assert "src/player.py" in data["suggested_files"]
+    assert "src/physics.py" in data["suggested_files"]
+    assert data["suggested_read_scope"] == data["suggested_files"]
+    assert data["suggested_write_scope"] == data["suggested_files"]
+    assert len(data["matches"]) == 2
+
+
+def test_task_plan_search_dedupes_queries_and_files(client: TestClient, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    import subprocess
+    def mock_run(cmd, *args, **kwargs):
+        return subprocess.CompletedProcess(cmd, 0, "src/player.py:1:class Player\n")
+
+    project_id, ws_dir = _setup_search_project(client, tmp_path, monkeypatch, mock_run)
+    (ws_dir / "src").mkdir(exist_ok=True)
+    (ws_dir / "src" / "player.py").write_text("class Player\n")
+
+    response = client.post(f"/projects/{project_id}/task-plan/search", json={
+        "goal": "Fix player",
+        "queries": ["player", "  player  ", "player"]
+    })
+    assert response.status_code == 200
+    data = response.json()
+    assert data["queries"] == ["player"]
+    assert data["suggested_files"] == ["src/player.py"]
+    assert len(data["matches"]) == 1
+
+
+def test_task_plan_search_respects_glob(client: TestClient, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    import subprocess
+    def mock_run(cmd, *args, **kwargs):
+        assert "*.py" in cmd
+        return subprocess.CompletedProcess(cmd, 0, "src/player.py:1:class Player\n")
+
+    project_id, ws_dir = _setup_search_project(client, tmp_path, monkeypatch, mock_run)
+    (ws_dir / "src").mkdir(exist_ok=True)
+    (ws_dir / "src" / "player.py").write_text("class Player\n")
+    (ws_dir / "doc.txt").write_text("class Player\n")
+
+    response = client.post(f"/projects/{project_id}/task-plan/search", json={
+        "goal": "Fix player",
+        "queries": ["Player"],
+        "glob": "*.py"
+    })
+    assert response.status_code == 200
+    data = response.json()
+    assert data["suggested_files"] == ["src/player.py"]
+
+
+def test_task_plan_search_excludes_risky_files_from_write_scope(client: TestClient, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    import subprocess
+    def mock_run(cmd, *args, **kwargs):
+        return subprocess.CompletedProcess(cmd, 0, "src/player.py:1:match\npackage.json:1:match\n")
+
+    project_id, ws_dir = _setup_search_project(client, tmp_path, monkeypatch, mock_run)
+    (ws_dir / "src").mkdir(exist_ok=True)
+    (ws_dir / "src" / "player.py").write_text("match\n")
+    (ws_dir / "package.json").write_text("match\n")
+
+    response = client.post(f"/projects/{project_id}/task-plan/search", json={
+        "goal": "Update dependency and code",
+        "queries": ["match"]
+    })
+    assert response.status_code == 200
+    data = response.json()
+    assert "src/player.py" in data["suggested_read_scope"]
+    assert "package.json" in data["suggested_read_scope"]
+    assert "src/player.py" in data["suggested_write_scope"]
+    assert "package.json" not in data["suggested_write_scope"]
+
+
+def test_task_plan_search_no_matches_returns_empty_suggestions(client: TestClient, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    import subprocess
+    def mock_run(cmd, *args, **kwargs):
+        return subprocess.CompletedProcess(cmd, 1, "")
+
+    project_id, ws_dir = _setup_search_project(client, tmp_path, monkeypatch, mock_run)
+
+    response = client.post(f"/projects/{project_id}/task-plan/search", json={
+        "goal": "Search something empty",
+        "queries": ["emptypattern"]
+    })
+    assert response.status_code == 200
+    data = response.json()
+    assert data["suggested_files"] == []
+    assert data["suggested_read_scope"] == []
+    assert data["suggested_write_scope"] == []
+    assert "No relevant files found" in data["prompt_context"]
+
+
+def test_task_plan_search_rejects_empty_goal_or_queries(client: TestClient, tmp_path: Path) -> None:
+    project_id, ws_dir = _setup_search_project(client, tmp_path, None)
+
+    r1 = client.post(f"/projects/{project_id}/task-plan/search", json={
+        "goal": "   ",
+        "queries": ["query"]
+    })
+    assert r1.status_code == 422
+
+    r2 = client.post(f"/projects/{project_id}/task-plan/search", json={
+        "goal": "Some goal",
+        "queries": []
+    })
+    assert r2.status_code == 422
+
+    r3 = client.post(f"/projects/{project_id}/task-plan/search", json={
+        "goal": "Some goal",
+        "queries": ["  ", ""]
+    })
+    assert r3.status_code == 422
+
+
+def test_task_plan_search_max_files_truncates(client: TestClient, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    import subprocess
+    def mock_run(cmd, *args, **kwargs):
+        return subprocess.CompletedProcess(cmd, 0, "a.py:1:m\nb.py:1:m\nc.py:1:m\n")
+
+    project_id, ws_dir = _setup_search_project(client, tmp_path, monkeypatch, mock_run)
+    (ws_dir / "a.py").write_text("m\n")
+    (ws_dir / "b.py").write_text("m\n")
+    (ws_dir / "c.py").write_text("m\n")
+
+    response = client.post(f"/projects/{project_id}/task-plan/search", json={
+        "goal": "Limit files",
+        "queries": ["m"],
+        "max_files": 2
+    })
+    assert response.status_code == 200
+    data = response.json()
+    assert len(data["suggested_files"]) == 2
+    assert data["truncated"] is True
+
+
+def test_task_plan_search_prompt_context_contains_goal_and_scopes(client: TestClient, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    import subprocess
+    def mock_run(cmd, *args, **kwargs):
+        return subprocess.CompletedProcess(cmd, 0, "src/player.py:1:match\n")
+
+    project_id, ws_dir = _setup_search_project(client, tmp_path, monkeypatch, mock_run)
+    (ws_dir / "src").mkdir(exist_ok=True)
+    (ws_dir / "src" / "player.py").write_text("match\n")
+
+    response = client.post(f"/projects/{project_id}/task-plan/search", json={
+        "goal": "Fix player bugs",
+        "queries": ["match"]
+    })
+    assert response.status_code == 200
+    data = response.json()
+    ctx = data["prompt_context"]
+    assert "Goal:\nFix player bugs" in ctx
+    assert "Relevant files found:" in ctx
+    assert "- src/player.py" in ctx
+    assert "Suggested read_scope:" in ctx
+    assert "Suggested write_scope:" in ctx
+
+
+def test_task_plan_search_does_not_modify_workspace(client: TestClient, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    import subprocess
+    def mock_run(cmd, *args, **kwargs):
+        return subprocess.CompletedProcess(cmd, 0, "main.py:1:match\n")
+
+    project_id, ws_dir = _setup_search_project(client, tmp_path, monkeypatch, mock_run)
+    (ws_dir / "main.py").write_text("match\n")
+
+    before_files = sorted(list(ws_dir.rglob("*")))
+    before_contents = {f: f.read_bytes() for f in before_files if f.is_file()}
+
+    response = client.post(f"/projects/{project_id}/task-plan/search", json={
+        "goal": "Do not touch files",
+        "queries": ["match"]
+    })
+    assert response.status_code == 200
+
+    after_files = sorted(list(ws_dir.rglob("*")))
+    after_contents = {f: f.read_bytes() for f in after_files if f.is_file()}
+
+    assert before_files == after_files
+    assert before_contents == after_contents
+
+
+def test_task_plan_search_uses_project_search_security(client: TestClient, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    import subprocess
+    def mock_run(cmd, *args, **kwargs):
+        assert "!.git/**" in cmd
+        assert "!**/.env" in cmd
+        return subprocess.CompletedProcess(cmd, 0, "main.py:1:match\n")
+
+    project_id, ws_dir = _setup_search_project(client, tmp_path, monkeypatch, mock_run)
+    (ws_dir / "main.py").write_text("match\n")
+
+    response = client.post(f"/projects/{project_id}/task-plan/search", json={
+        "goal": "Test exclusions",
+        "queries": ["match"]
+    })
+    assert response.status_code == 200
+
+
 
 
 
