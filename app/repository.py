@@ -180,12 +180,31 @@ class Repository:
     def __init__(self, conn: sqlite3.Connection):
         self.conn = conn
 
-    def _has_lock_conflict(self, project_id: int, task_id: int, write_scope: list[str]) -> bool:
+    def _expire_stale_task_locks(self, now: str) -> None:
+        self.conn.execute(
+            """
+            UPDATE task_locks
+            SET status = 'expired',
+                released_at = ?
+            WHERE status = 'active'
+              AND expires_at IS NOT NULL
+              AND expires_at < ?
+            """,
+            (now, now)
+        )
+
+    def _has_lock_conflict(self, project_id: int, task_id: int, write_scope: list[str], now: str) -> bool:
         if not write_scope:
             return False
         rows = self.conn.execute(
-            "SELECT task_id, resource_key FROM task_locks WHERE project_id = ? AND status = 'active' AND task_id != ?",
-            (project_id, task_id)
+            """
+            SELECT task_id, resource_key FROM task_locks
+            WHERE project_id = ?
+              AND status = 'active'
+              AND (expires_at IS NULL OR expires_at >= ?)
+              AND task_id != ?
+            """,
+            (project_id, now, task_id)
         ).fetchall()
         for row in rows:
             locked_key = row["resource_key"]
@@ -1302,6 +1321,7 @@ class Repository:
                   )
         """ if requires_project_config else ""
         with transaction(self.conn):
+            self._expire_stale_task_locks(timestamp)
             rows = self.conn.execute(
                 f"""
                 SELECT * FROM tasks
@@ -1325,7 +1345,7 @@ class Repository:
                 # Check project linkage and conflict
                 project = self._project_for_task(candidate_id)
                 if project and candidate_write_scope:
-                    if self._has_lock_conflict(project["id"], candidate_id, candidate_write_scope):
+                    if self._has_lock_conflict(project["id"], candidate_id, candidate_write_scope, timestamp):
                         continue
                 eligible_task = candidate
                 break
@@ -1368,11 +1388,11 @@ class Repository:
                         """
                         INSERT INTO task_locks (
                             project_id, task_id, worker_id, node_id, lock_type,
-                            resource_key, mode, status, created_at
+                            resource_key, mode, status, created_at, expires_at
                         )
-                        VALUES (?, ?, ?, ?, 'path', ?, 'write', 'active', ?)
+                        VALUES (?, ?, ?, ?, 'path', ?, 'write', 'active', ?, ?)
                         """,
-                        (project["id"], task_id, worker_id, node_id, pattern, timestamp)
+                        (project["id"], task_id, worker_id, node_id, pattern, timestamp, lease_until)
                     )
 
             self.conn.execute(
@@ -1397,6 +1417,7 @@ class Repository:
         timestamp = now_iso()
         lease_until = (datetime.now(UTC) + timedelta(minutes=lease_minutes)).isoformat(timespec="seconds")
         with transaction(self.conn):
+            self._expire_stale_task_locks(timestamp)
             row = self.conn.execute("SELECT * FROM tasks WHERE id = ?", (task_id,)).fetchone()
             if row is None:
                 raise KeyError("task not found")
@@ -1437,7 +1458,7 @@ class Repository:
 
             # Check write-scope lock conflict
             if project_for_bc and task.get("write_scope"):
-                if self._has_lock_conflict(project_for_bc["id"], task_id, task["write_scope"]):
+                if self._has_lock_conflict(project_for_bc["id"], task_id, task["write_scope"], timestamp):
                     raise ValueError("Task has write-scope lock conflict with another active task")
 
             # Release any existing active locks for this task
@@ -1451,11 +1472,11 @@ class Repository:
                         """
                         INSERT INTO task_locks (
                             project_id, task_id, worker_id, node_id, lock_type,
-                            resource_key, mode, status, created_at
+                            resource_key, mode, status, created_at, expires_at
                         )
-                        VALUES (?, ?, ?, ?, 'path', ?, 'write', 'active', ?)
+                        VALUES (?, ?, ?, ?, 'path', ?, 'write', 'active', ?, ?)
                         """,
-                        (project_for_bc["id"], task_id, worker_id, node_id, pattern, timestamp)
+                        (project_for_bc["id"], task_id, worker_id, node_id, pattern, timestamp, lease_until)
                     )
 
             self.conn.execute(

@@ -1826,3 +1826,182 @@ def test_lock_prevention_glob_conflict(client: TestClient) -> None:
     leased2_res = client.post("/workers/worker-2/lease", json={"role": "code_worker", "lease_minutes": 30})
     assert leased2_res.status_code == 204
 
+
+# ---------------------------------------------------------------------------
+# Stale Task Lock Prevention Tests
+# ---------------------------------------------------------------------------
+
+def test_lock_prevention_non_expired_blocks(client: TestClient) -> None:
+    # A. Active non-expired lock still blocks conflicting lease/claim.
+    sub_epic_id = _make_dummy_project_sub_epic(client)
+
+    task1 = client.post(f"/sub-epics/{sub_epic_id}/tasks", json={
+        "role": "code_worker",
+        "goal": "Non-expired test 1",
+        "requirements": ["X"],
+        "success_criteria": ["Y"],
+        "estimated_minutes": 15,
+        "branch": "worker/non-expired-1",
+        "write_scope": ["src/player.py"],
+    }).json()
+
+    task2 = client.post(f"/sub-epics/{sub_epic_id}/tasks", json={
+        "role": "code_worker",
+        "goal": "Non-expired test 2",
+        "requirements": ["X"],
+        "success_criteria": ["Y"],
+        "estimated_minutes": 15,
+        "branch": "worker/non-expired-2",
+        "write_scope": ["src/player.py"],
+    }).json()
+
+    # Lease task 1 (lock created with expires_at far in the future)
+    leased1 = client.post("/workers/worker-1/lease", json={"role": "code_worker", "lease_minutes": 30}).json()
+    assert leased1["id"] == task1["id"]
+
+    # Try claiming task 2 -> should fail because lock is not expired
+    claim_res = client.post(f"/workers/worker-2/tasks/{task2['id']}/claim", json={"lease_minutes": 30})
+    assert claim_res.status_code == 409
+
+
+def test_lock_prevention_expired_does_not_block(client: TestClient) -> None:
+    # B. Expired active lock does not block conflicting lease/claim.
+    sub_epic_id = _make_dummy_project_sub_epic(client)
+
+    task1 = client.post(f"/sub-epics/{sub_epic_id}/tasks", json={
+        "role": "code_worker",
+        "goal": "Expired test 1",
+        "requirements": ["X"],
+        "success_criteria": ["Y"],
+        "estimated_minutes": 15,
+        "branch": "worker/expired-1",
+        "write_scope": ["src/player.py"],
+    }).json()
+
+    task2 = client.post(f"/sub-epics/{sub_epic_id}/tasks", json={
+        "role": "code_worker",
+        "goal": "Expired test 2",
+        "requirements": ["X"],
+        "success_criteria": ["Y"],
+        "estimated_minutes": 15,
+        "branch": "worker/expired-2",
+        "write_scope": ["src/player.py"],
+    }).json()
+
+    # Lease task 1
+    leased1 = client.post("/workers/worker-1/lease", json={"role": "code_worker", "lease_minutes": 30}).json()
+    assert leased1["id"] == task1["id"]
+
+    # Manually set task 1's lock to be expired in the past
+    repo = app.dependency_overrides[get_repo]()
+    repo.conn.execute(
+        "UPDATE task_locks SET expires_at = '2020-01-01T00:00:00' WHERE task_id = ?",
+        (task1["id"],)
+    )
+    repo.conn.commit()
+
+    # Now task 2 should be leasable because task 1's lock is expired
+    leased2 = client.post("/workers/worker-2/lease", json={"role": "code_worker", "lease_minutes": 30}).json()
+    assert leased2["id"] == task2["id"]
+
+
+def test_lock_prevention_expired_status_updated(client: TestClient) -> None:
+    # C. Expired active lock is marked expired with released_at set during lease/claim cleanup.
+    sub_epic_id = _make_dummy_project_sub_epic(client)
+
+    task1 = client.post(f"/sub-epics/{sub_epic_id}/tasks", json={
+        "role": "code_worker",
+        "goal": "Status expired test 1",
+        "requirements": ["X"],
+        "success_criteria": ["Y"],
+        "estimated_minutes": 15,
+        "branch": "worker/status-expired-1",
+        "write_scope": ["src/player.py"],
+    }).json()
+
+    # Lease task 1
+    leased1 = client.post("/workers/worker-1/lease", json={"role": "code_worker", "lease_minutes": 30}).json()
+    assert leased1["id"] == task1["id"]
+
+    # Manually set task 1's lock to be expired in the past
+    repo = app.dependency_overrides[get_repo]()
+    repo.conn.execute(
+        "UPDATE task_locks SET expires_at = '2020-01-01T00:00:00' WHERE task_id = ?",
+        (task1["id"],)
+    )
+    repo.conn.commit()
+
+    # Call lease again to trigger cleanup
+    client.post("/workers/worker-2/lease", json={"role": "code_worker", "lease_minutes": 30})
+
+    # Verify task 1's lock in the DB is updated to status='expired' and released_at is set
+    lock = repo.conn.execute("SELECT * FROM task_locks WHERE task_id = ?", (task1["id"],)).fetchone()
+    assert lock["status"] == "expired"
+    assert lock["released_at"] is not None
+
+
+def test_lock_prevention_lease_has_expires_at(client: TestClient) -> None:
+    # D. Lock acquired on a normal lease has expires_at matching the task lease deadline if available.
+    sub_epic_id = _make_dummy_project_sub_epic(client)
+
+    task = client.post(f"/sub-epics/{sub_epic_id}/tasks", json={
+        "role": "code_worker",
+        "goal": "Expires matching test",
+        "requirements": ["X"],
+        "success_criteria": ["Y"],
+        "estimated_minutes": 15,
+        "branch": "worker/expires-matching",
+        "write_scope": ["src/player.py"],
+    }).json()
+
+    leased = client.post("/workers/worker-1/lease", json={"role": "code_worker", "lease_minutes": 30}).json()
+    assert leased["id"] == task["id"]
+
+    repo = app.dependency_overrides[get_repo]()
+    lock = repo.conn.execute("SELECT * FROM task_locks WHERE task_id = ?", (task["id"],)).fetchone()
+    db_task = repo.conn.execute("SELECT * FROM tasks WHERE id = ?", (task["id"],)).fetchone()
+    
+    assert lock["expires_at"] == db_task["leased_until"]
+    assert lock["expires_at"] is not None
+
+
+def test_lock_prevention_null_expires_at_blocks(client: TestClient) -> None:
+    # E. Lock with expires_at = NULL still blocks until explicitly released.
+    sub_epic_id = _make_dummy_project_sub_epic(client)
+
+    task1 = client.post(f"/sub-epics/{sub_epic_id}/tasks", json={
+        "role": "code_worker",
+        "goal": "Null expires test 1",
+        "requirements": ["X"],
+        "success_criteria": ["Y"],
+        "estimated_minutes": 15,
+        "branch": "worker/null-expires-1",
+        "write_scope": ["src/player.py"],
+    }).json()
+
+    task2 = client.post(f"/sub-epics/{sub_epic_id}/tasks", json={
+        "role": "code_worker",
+        "goal": "Null expires test 2",
+        "requirements": ["X"],
+        "success_criteria": ["Y"],
+        "estimated_minutes": 15,
+        "branch": "worker/null-expires-2",
+        "write_scope": ["src/player.py"],
+    }).json()
+
+    # Lease task 1
+    leased1 = client.post("/workers/worker-1/lease", json={"role": "code_worker", "lease_minutes": 30}).json()
+    assert leased1["id"] == task1["id"]
+
+    # Manually set task 1's lock expires_at to NULL
+    repo = app.dependency_overrides[get_repo]()
+    repo.conn.execute(
+        "UPDATE task_locks SET expires_at = NULL WHERE task_id = ?",
+        (task1["id"],)
+    )
+    repo.conn.commit()
+
+    # Try claiming/leasing task 2 -> should still fail because expires_at = NULL means it never expires naturally
+    leased2_res = client.post("/workers/worker-2/lease", json={"role": "code_worker", "lease_minutes": 30})
+    assert leased2_res.status_code == 204
+
