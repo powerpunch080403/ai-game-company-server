@@ -454,6 +454,8 @@ POST /merge-candidates/{candidate_id}/execute
 - **Target Gate**: V1 is considered complete only after the Owner smoke test is run and the result is recorded as PASS.
 - **Transition**: After the V1 smoke test passes, the project officially enters the V1.5 expansion phase. Some V1.5-style infrastructure may already be implemented, but the official V1.5 phase begins only after V1 smoke acceptance.
 
+The reusable Owner agent prompt for this smoke test is stored in [`docs/V1_SMOKE_TEST.md`](docs/V1_SMOKE_TEST.md).
+
 ### Planned Smoke Test Flow
 Before V1 is officially declared complete, the Owner will run a real smoke test that verifies the practical end-to-end workflow:
 1. **Owner creates a task from planning search** (`POST /projects/{project_id}/tasks/from-plan`).

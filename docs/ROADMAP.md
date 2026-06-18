@@ -67,6 +67,7 @@ Work that can be done locally:
 - **Required Result**: PASS
 - **Result Location**: To be recorded in the smoke test result log under `README.md` once run.
 - **V1 Status**: Pending smoke test result
+- **Reusable Owner smoke test prompt**: [`docs/V1_SMOKE_TEST.md`](V1_SMOKE_TEST.md)
 
 The V1 release is considered complete only after the Owner runs a manual smoke test verifying the E2E workflow and the result is recorded as PASS.
 
