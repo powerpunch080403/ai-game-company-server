@@ -1823,3 +1823,47 @@ class Repository:
             (project_id,),
         ).fetchall()
         return [row_to_dict(row) or {} for row in rows]
+
+    def get_merge_candidate(self, candidate_id: int) -> dict[str, Any]:
+        row = self.conn.execute(
+            "SELECT * FROM merge_candidates WHERE id = ?",
+            (candidate_id,),
+        ).fetchone()
+        if row is None:
+            raise KeyError("merge candidate not found")
+        return row_to_dict(row) or {}
+
+    def approve_merge_candidate(self, candidate_id: int) -> dict[str, Any]:
+        timestamp = now_iso()
+        with transaction(self.conn):
+            candidate = self.get_merge_candidate(candidate_id)
+            if candidate["status"] != "queued":
+                raise ValueError("only queued merge candidates can be approved")
+            self.conn.execute(
+                """
+                UPDATE merge_candidates
+                SET status = 'approved',
+                    updated_at = ?
+                WHERE id = ?
+                """,
+                (timestamp, candidate_id),
+            )
+        return self.get_merge_candidate(candidate_id)
+
+    def reject_merge_candidate(self, candidate_id: int) -> dict[str, Any]:
+        timestamp = now_iso()
+        with transaction(self.conn):
+            candidate = self.get_merge_candidate(candidate_id)
+            if candidate["status"] != "queued":
+                raise ValueError("only queued merge candidates can be rejected")
+            self.conn.execute(
+                """
+                UPDATE merge_candidates
+                SET status = 'rejected',
+                    updated_at = ?,
+                    rejected_at = ?
+                WHERE id = ?
+                """,
+                (timestamp, timestamp, candidate_id),
+            )
+        return self.get_merge_candidate(candidate_id)

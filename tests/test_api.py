@@ -2264,3 +2264,106 @@ def test_merge_candidate_lock_release_behavior(client: TestClient) -> None:
     assert leased2["id"] == task2["id"]
 
 
+def test_merge_candidate_review_actions(client: TestClient) -> None:
+    # Set up project, task, lease, and report success to create a queued candidate
+    sub_epic_id = _make_dummy_project_sub_epic(client)
+    project_res = client.get("/projects").json()
+    project_id = project_res[-1]["id"]
+
+    task1 = client.post(f"/sub-epics/{sub_epic_id}/tasks", json={
+        "role": "code_worker",
+        "goal": "Candidate review test task 1",
+        "requirements": ["X"],
+        "success_criteria": ["Y"],
+        "estimated_minutes": 15,
+        "branch": "worker/review-task-1",
+        "write_scope": ["src/player.py"],
+    }).json()
+
+    # Lease task 1
+    client.post("/workers/worker-r1/lease", json={"role": "code_worker", "lease_minutes": 30}).json()
+
+    # Report completion (succeeds, creates queued merge candidate)
+    report = _report_payload("success")
+    report["changed_files"] = ["src/player.py"]
+    client.post(f"/workers/worker-r1/tasks/{task1['id']}/report", json=report).json()
+
+    # Get the created candidate ID
+    candidates = client.get(f"/projects/{project_id}/merge-candidates").json()
+    assert len(candidates) == 1
+    candidate = candidates[0]
+    candidate_id = candidate["id"]
+    assert candidate["status"] == "queued"
+
+    # A. queued candidate can be approved
+    approve_res = client.post(f"/merge-candidates/{candidate_id}/approve")
+    assert approve_res.status_code == 200
+    approved_mc = approve_res.json()
+    assert approved_mc["status"] == "approved"
+    assert approved_mc["updated_at"] is not None
+    assert approved_mc["merged_at"] is None
+    assert approved_mc["rejected_at"] is None
+
+    # E. approved/rejected candidates still appear in project merge-candidates list with updated status
+    list_res = client.get(f"/projects/{project_id}/merge-candidates").json()
+    assert len(list_res) == 1
+    assert list_res[0]["status"] == "approved"
+
+    # C. approved candidate cannot be rejected (returns 409)
+    reject_res = client.post(f"/merge-candidates/{candidate_id}/reject")
+    assert reject_res.status_code == 409
+
+    # D. repeated approve on approved returns 409
+    approve_retry = client.post(f"/merge-candidates/{candidate_id}/approve")
+    assert approve_retry.status_code == 409
+
+    # Now create another candidate to test reject flow
+    task2 = client.post(f"/sub-epics/{sub_epic_id}/tasks", json={
+        "role": "code_worker",
+        "goal": "Candidate review test task 2",
+        "requirements": ["X"],
+        "success_criteria": ["Y"],
+        "estimated_minutes": 15,
+        "branch": "worker/review-task-2",
+        "write_scope": ["src/player.py"],
+    }).json()
+
+    # Lease task 2
+    client.post("/workers/worker-r2/lease", json={"role": "code_worker", "lease_minutes": 30}).json()
+
+    # Report completion
+    client.post(f"/workers/worker-r2/tasks/{task2['id']}/report", json=report).json()
+
+    # Get the second candidate ID
+    candidates = client.get(f"/projects/{project_id}/merge-candidates").json()
+    assert len(candidates) == 2
+    # Find the one that is still queued
+    queued_candidates = [c for c in candidates if c["status"] == "queued"]
+    assert len(queued_candidates) == 1
+    candidate2_id = queued_candidates[0]["id"]
+
+    # B. queued candidate can be rejected
+    reject_res2 = client.post(f"/merge-candidates/{candidate2_id}/reject")
+    assert reject_res2.status_code == 200
+    rejected_mc = reject_res2.json()
+    assert rejected_mc["status"] == "rejected"
+    assert rejected_mc["updated_at"] is not None
+    assert rejected_mc["rejected_at"] is not None
+    assert rejected_mc["merged_at"] is None
+
+    # D. rejected candidate cannot be approved (returns 409)
+    approve_res2 = client.post(f"/merge-candidates/{candidate2_id}/approve")
+    assert approve_res2.status_code == 409
+
+    # D. repeated reject on rejected returns 409
+    reject_retry = client.post(f"/merge-candidates/{candidate2_id}/reject")
+    assert reject_retry.status_code == 409
+
+    # E. Action on missing candidate returns 404
+    missing_approve = client.post("/merge-candidates/999999/approve")
+    assert missing_approve.status_code == 404
+    missing_reject = client.post("/merge-candidates/999999/reject")
+    assert missing_reject.status_code == 404
+
+
+

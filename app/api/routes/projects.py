@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 
 from app.api.deps import get_repo, not_found
 from app.repository import Repository
@@ -68,3 +68,23 @@ def list_merge_candidates(project_id: int, repo: Repository = Depends(get_repo))
         return repo.list_merge_candidates(project_id)
     except KeyError as exc:
         raise not_found(exc) from exc
+
+
+@router.post("/merge-candidates/{candidate_id}/approve", response_model=MergeCandidateRead)
+def approve_merge_candidate(candidate_id: int, repo: Repository = Depends(get_repo)) -> dict:
+    try:
+        return repo.approve_merge_candidate(candidate_id)
+    except KeyError as exc:
+        raise not_found(exc) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+@router.post("/merge-candidates/{candidate_id}/reject", response_model=MergeCandidateRead)
+def reject_merge_candidate(candidate_id: int, repo: Repository = Depends(get_repo)) -> dict:
+    try:
+        return repo.reject_merge_candidate(candidate_id)
+    except KeyError as exc:
+        raise not_found(exc) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
