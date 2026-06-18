@@ -441,9 +441,11 @@ Available local API endpoints:
 GET /projects/{project_id}/merge-candidates
 POST /merge-candidates/{candidate_id}/approve
 POST /merge-candidates/{candidate_id}/reject
+POST /merge-candidates/{candidate_id}/dry-run
+POST /merge-candidates/{candidate_id}/execute
 ```
 
-`approved` means the owner accepted the candidate for a future merge executor. `rejected` means the owner discarded the candidate. These review actions do not perform a real Git merge and do not set `merged_at`.
+`approved` means the owner accepted the candidate for a future merge executor. `rejected` means the owner discarded the candidate. The approve and reject actions do not perform a real Git merge. To execute a real local Git merge in the project workspace, use the `/execute` endpoint (which runs dry-run checks before executing the merge).
 
 ## Owner Run
 

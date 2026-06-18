@@ -427,9 +427,11 @@ task success
 GET /projects/{project_id}/merge-candidates
 POST /merge-candidates/{candidate_id}/approve
 POST /merge-candidates/{candidate_id}/reject
+POST /merge-candidates/{candidate_id}/dry-run
+POST /merge-candidates/{candidate_id}/execute
 ```
 
-`approved`는 owner가 이 후보를 향후 merge executor의 대상으로 승인했다는 뜻입니다. `rejected`는 owner가 이 후보를 폐기했다는 뜻입니다. 이 검토 액션들은 실제 Git merge를 수행하지 않으며 `merged_at`도 설정하지 않습니다.
+`approved`는 owner가 이 후보를 향후 merge executor의 대상으로 승인했다는 뜻입니다. `rejected`는 owner가 이 후보를 폐기했다는 뜻입니다. 승인(approve) 및 반려(reject) 액션은 실제 Git merge를 수행하지 않습니다. 프로젝트 워크스페이스 내에서 실제 로컬 Git merge를 수행하려면 `/execute` 엔드포인트를 사용합니다 (병합을 실행하기 전에 자동으로 dry-run 준비 상태를 검증합니다).
 
 ## Owner Run
 

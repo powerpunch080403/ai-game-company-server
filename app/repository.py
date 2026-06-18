@@ -1926,3 +1926,100 @@ class Repository:
             "base_commit": candidate.get("base_commit"),
             "task_status": task_status,
         }
+
+    def execute_merge_candidate(self, candidate_id: int) -> dict[str, Any]:
+        candidate = self.get_merge_candidate(candidate_id)
+        task_id = candidate["task_id"]
+
+        # 1. Get workspace path and base branch
+        project = self._project_for_task(task_id)
+        if not project:
+            raise ValueError("workspace_unavailable")
+        ws = project.get("workspace_path") or ""
+        db = project.get("base_branch") or "main"
+        if not ws:
+            raise ValueError("workspace_unavailable")
+
+        # 2. Safety and readiness checks via local Git
+        try:
+            # Check if working tree is dirty
+            res_status = subprocess.run(
+                ["git", "status", "--porcelain"],
+                capture_output=True,
+                text=True,
+                cwd=ws,
+                timeout=5,
+            )
+            if res_status.returncode != 0:
+                raise ValueError("workspace_unavailable")
+            if res_status.stdout.strip():
+                raise ValueError("dirty_workspace")
+
+            # Check if current HEAD matches candidate.base_commit
+            res_head = subprocess.run(
+                ["git", "rev-parse", "HEAD"],
+                capture_output=True,
+                text=True,
+                cwd=ws,
+                timeout=5,
+            )
+            if res_head.returncode != 0:
+                raise ValueError("workspace_unavailable")
+            current_head = res_head.stdout.strip()
+            if current_head != candidate.get("base_commit"):
+                raise ValueError("stale_base")
+
+            # Check if the candidate branch exists locally
+            branch_name = candidate.get("branch_name")
+            res_branch = subprocess.run(
+                ["git", "show-ref", f"refs/heads/{branch_name}"],
+                capture_output=True,
+                text=True,
+                cwd=ws,
+                timeout=5,
+            )
+            if res_branch.returncode != 0:
+                raise ValueError("missing_branch")
+        except ValueError:
+            raise
+        except Exception:
+            raise ValueError("workspace_unavailable")
+
+        # 3. Perform Git merge: git merge --no-ff --no-edit <branch_name>
+        res_merge = subprocess.run(
+            ["git", "merge", "--no-ff", "--no-edit", branch_name],
+            capture_output=True,
+            text=True,
+            cwd=ws,
+            timeout=10,
+        )
+
+        if res_merge.returncode != 0:
+            # Abort merge in progress
+            subprocess.run(
+                ["git", "merge", "--abort"],
+                capture_output=True,
+                cwd=ws,
+                timeout=5,
+            )
+            # Include a short safe error message
+            err_msg = res_merge.stderr.strip() or res_merge.stdout.strip() or "unknown error"
+            short_err = err_msg.split('\n')[0][:100]
+            raise ValueError(f"merge_failed: {short_err}")
+
+        # 4. Merge succeeded, update DB
+        timestamp = now_iso()
+        with transaction(self.conn):
+            self.conn.execute(
+                """
+                UPDATE merge_candidates
+                SET status = 'merged',
+                    updated_at = ?,
+                    merged_at = ?
+                WHERE id = ?
+                """,
+                (timestamp, timestamp, candidate_id),
+            )
+            self._add_task_event(task_id, "merged", f"Merge candidate {candidate_id} branch {branch_name} merged successfully")
+
+        return self.get_merge_candidate(candidate_id)

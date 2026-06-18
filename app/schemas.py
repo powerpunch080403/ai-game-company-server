@@ -307,3 +307,13 @@ class MergeCandidateDryRunRead(BaseModel):
     branch_name: str | None = None
     base_commit: str | None = None
     task_status: str | None = None
+
+
+class MergeCandidateExecuteRead(BaseModel):
+    candidate_id: int
+    merged: bool
+    status: str
+    reasons: list[str] = []
+    branch_name: str | None = None
+    base_commit: str | None = None
+    merged_at: str | None = None

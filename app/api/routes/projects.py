@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException
 
 from app.api.deps import get_repo, not_found
 from app.repository import Repository
-from app.schemas import EpicCreate, ProjectConfigUpdate, ProjectCreate, SubEpicCreate, MergeCandidateRead, MergeCandidateDryRunRead
+from app.schemas import EpicCreate, ProjectConfigUpdate, ProjectCreate, SubEpicCreate, MergeCandidateRead, MergeCandidateDryRunRead, MergeCandidateExecuteRead
 
 
 router = APIRouter()
@@ -96,3 +96,39 @@ def dry_run_merge_candidate(candidate_id: int, repo: Repository = Depends(get_re
         return repo.dry_run_merge_candidate(candidate_id)
     except KeyError as exc:
         raise not_found(exc) from exc
+
+
+@router.post("/merge-candidates/{candidate_id}/execute", response_model=MergeCandidateExecuteRead)
+def execute_merge_candidate(candidate_id: int, repo: Repository = Depends(get_repo)) -> dict:
+    try:
+        # 1. Run dry-run checks first
+        dry_run = repo.dry_run_merge_candidate(candidate_id)
+        if not dry_run["ready"]:
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "message": "Merge candidate is not ready for merge execution",
+                    "reasons": dry_run["reasons"]
+                }
+            )
+        # 2. Run real git merge
+        res = repo.execute_merge_candidate(candidate_id)
+        return {
+            "candidate_id": candidate_id,
+            "merged": True,
+            "status": res["status"],
+            "reasons": [],
+            "branch_name": res["branch_name"],
+            "base_commit": res["base_commit"],
+            "merged_at": res["merged_at"],
+        }
+    except KeyError as exc:
+        raise not_found(exc) from exc
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "message": "Merge candidate execution failed",
+                "reasons": [str(exc)]
+            }
+        ) from exc

@@ -2506,5 +2506,210 @@ def test_dry_run_stale_base(client: TestClient, tmp_path: Path) -> None:
     assert "stale_base" in dr_data["reasons"]
 
 
+def test_merge_candidate_execution_flow(client: TestClient, tmp_path: Path) -> None:
+    # A. approved + dry-run-ready candidate merges local branch and updates status to merged.
+    remote, _workspace = make_git_repo(tmp_path)
+    source = tmp_path / "source"
+
+    proj_id, sub_epic_id = _make_project_with_repo(client, source, remote)
+
+    task = client.post(f"/sub-epics/{sub_epic_id}/tasks", json={
+        "role": "code_worker",
+        "goal": "Execution test task",
+        "requirements": ["X"],
+        "success_criteria": ["Y"],
+        "estimated_minutes": 15,
+        "branch": "worker/exec-branch",
+    }).json()
+
+    # Lease task (sets base_commit)
+    leased = client.post("/workers/worker-ex/lease", json={"role": "code_worker", "lease_minutes": 30}).json()
+    assert leased["base_commit"] is not None
+
+    # Report completion (succeeds, creates queued candidate)
+    report = _report_payload("success")
+    completed = client.post(f"/workers/worker-ex/tasks/{task['id']}/report", json=report).json()
+    assert completed["status"] == "success"
+
+    # Get candidate ID
+    candidates = client.get(f"/projects/{proj_id}/merge-candidates").json()
+    assert len(candidates) == 1
+    candidate_id = candidates[0]["id"]
+
+    # B. execute on queued candidate returns 409 and does not merge
+    exec_queued_res = client.post(f"/merge-candidates/{candidate_id}/execute")
+    assert exec_queued_res.status_code == 409
+    assert "not_approved" in exec_queued_res.json()["detail"]["reasons"]
+
+    # Approve the candidate
+    client.post(f"/merge-candidates/{candidate_id}/approve")
+
+    # E. execute with missing branch returns 409 reason missing_branch
+    exec_missing_branch_res = client.post(f"/merge-candidates/{candidate_id}/execute")
+    assert exec_missing_branch_res.status_code == 409
+    assert "missing_branch" in exec_missing_branch_res.json()["detail"]["reasons"]
+
+    # Create the branch in local git workspace and commit a file
+    git(["checkout", "-b", "worker/exec-branch"], cwd=source)
+    (source / "CODE.md").write_text("code contents\n", encoding="utf-8")
+    git(["add", "CODE.md"], cwd=source)
+    git(["commit", "-m", "Commit on worker branch"], cwd=source)
+    # Go back to main
+    git(["checkout", "main"], cwd=source)
+
+    # D. execute with dirty workspace returns 409 reason dirty_workspace
+    (source / "DIRTY.md").write_text("dirty\n", encoding="utf-8")
+    exec_dirty_res = client.post(f"/merge-candidates/{candidate_id}/execute")
+    assert exec_dirty_res.status_code == 409
+    assert "dirty_workspace" in exec_dirty_res.json()["detail"]["reasons"]
+
+    # Clean up dirty file
+    (source / "DIRTY.md").unlink()
+    # Assert final git status is clean after abort/cleanups
+    assert git(["status", "--porcelain"], cwd=source).strip() == ""
+
+    # F. execute with stale base returns 409 reason stale_base
+    # Advance main
+    (source / "STALE.md").write_text("stale contents\n", encoding="utf-8")
+    git(["add", "STALE.md"], cwd=source)
+    git(["commit", "-m", "Advance main"], cwd=source)
+
+    exec_stale_res = client.post(f"/merge-candidates/{candidate_id}/execute")
+    assert exec_stale_res.status_code == 409
+    assert "stale_base" in exec_stale_res.json()["detail"]["reasons"]
+
+    # Clean up STALE.md and reset main back to base_commit
+    git(["reset", "--hard", leased["base_commit"]], cwd=source)
+    assert git(["status", "--porcelain"], cwd=source).strip() == ""
+
+    # A. approved + dry-run-ready candidate merges local branch and updates candidate status to merged
+    exec_success_res = client.post(f"/merge-candidates/{candidate_id}/execute")
+    assert exec_success_res.status_code == 200
+    exec_data = exec_success_res.json()
+    assert exec_data["merged"] is True
+    assert exec_data["status"] == "merged"
+
+    # I. successful execute sets merged_at and does not set rejected_at
+    assert exec_data["merged_at"] is not None
+
+    # J. successful execute should be visible in list endpoint with status merged
+    list_res = client.get(f"/projects/{proj_id}/merge-candidates").json()
+    assert len(list_res) == 1
+    assert list_res[0]["status"] == "merged"
+    assert list_res[0]["merged_at"] is not None
+    assert list_res[0]["rejected_at"] is None
+
+    # C. execute on rejected candidate returns 409 and does not merge
+    # Let's create a new task and candidate, reject it, and try to execute
+    task2 = client.post(f"/sub-epics/{sub_epic_id}/tasks", json={
+        "role": "code_worker",
+        "goal": "Rejected test task",
+        "requirements": ["X"],
+        "success_criteria": ["Y"],
+        "estimated_minutes": 15,
+        "branch": "worker/rejected-branch",
+    }).json()
+
+    # Lease and report success
+    client.post("/workers/worker-ex2/lease", json={"role": "code_worker", "lease_minutes": 30}).json()
+    client.post(f"/workers/worker-ex2/tasks/{task2['id']}/report", json=_report_payload("success")).json()
+    
+    candidates2 = client.get(f"/projects/{proj_id}/merge-candidates").json()
+    queued2 = [c for c in candidates2 if c["status"] == "queued"]
+    candidate2_id = queued2[0]["id"]
+
+    # Reject
+    client.post(f"/merge-candidates/{candidate2_id}/reject")
+
+    # Try to execute
+    exec_rejected_res = client.post(f"/merge-candidates/{candidate2_id}/execute")
+    assert exec_rejected_res.status_code == 409
+    assert "not_approved" in exec_rejected_res.json()["detail"]["reasons"]
+
+
+def test_merge_candidate_conflict_aborts(client: TestClient, tmp_path: Path) -> None:
+    # G. merge conflict returns 409 reason merge_failed, aborts merge, and keeps status approved.
+    remote, _workspace = make_git_repo(tmp_path)
+    source = tmp_path / "source"
+
+    proj_id, sub_epic_id = _make_project_with_repo(client, source, remote)
+
+    # Initialize conflict.txt on main
+    (source / "conflict.txt").write_text("initial content\n", encoding="utf-8")
+    git(["add", "conflict.txt"], cwd=source)
+    git(["commit", "-m", "Init conflict file"], cwd=source)
+
+    # Get current commit hash as common base
+    common_base = git(["rev-parse", "HEAD"], cwd=source).strip()
+
+    # Create task with branch
+    task = client.post(f"/sub-epics/{sub_epic_id}/tasks", json={
+        "role": "code_worker",
+        "goal": "Conflict test task",
+        "requirements": ["X"],
+        "success_criteria": ["Y"],
+        "estimated_minutes": 15,
+        "branch": "worker/conflict-branch",
+    }).json()
+
+    # Lease task (sets base_commit)
+    leased = client.post("/workers/worker-cf/lease", json={"role": "code_worker", "lease_minutes": 30}).json()
+    repo = app.dependency_overrides[get_repo]()
+    repo.conn.execute("UPDATE tasks SET base_commit = ? WHERE id = ?", (common_base, task["id"]))
+    repo.conn.commit()
+
+    # Report completion (succeeds, creates queued candidate)
+    report = _report_payload("success")
+    completed = client.post(f"/workers/worker-cf/tasks/{task['id']}/report", json=report).json()
+    assert completed["status"] == "success"
+
+    # Get candidate ID and force its base_commit to match common_base
+    candidates = client.get(f"/projects/{proj_id}/merge-candidates").json()
+    candidate_id = candidates[0]["id"]
+    repo.conn.execute("UPDATE merge_candidates SET base_commit = ? WHERE id = ?", (common_base, candidate_id))
+    repo.conn.commit()
+
+    # Create worker/conflict-branch from common_base and commit conflicts
+    git(["checkout", "-b", "worker/conflict-branch", common_base], cwd=source)
+    (source / "conflict.txt").write_text("worker edit\n", encoding="utf-8")
+    git(["add", "conflict.txt"], cwd=source)
+    git(["commit", "-m", "Worker conflict commit"], cwd=source)
+
+    # Go back to main and commit conflict
+    git(["checkout", "main"], cwd=source)
+    (source / "conflict.txt").write_text("main edit\n", encoding="utf-8")
+    git(["add", "conflict.txt"], cwd=source)
+    git(["commit", "-m", "Main conflict commit"], cwd=source)
+
+    # Now the main branch HEAD has advanced to a new commit.
+    # To prevent stale_base failure, we update candidate base_commit to the new HEAD of main
+    new_main_head = git(["rev-parse", "HEAD"], cwd=source).strip()
+    repo.conn.execute("UPDATE merge_candidates SET base_commit = ? WHERE id = ?", (new_main_head, candidate_id))
+    repo.conn.commit()
+
+    # Approve candidate
+    client.post(f"/merge-candidates/{candidate_id}/approve")
+
+    # Attempt to execute -> should fail with merge_failed
+    exec_conflict_res = client.post(f"/merge-candidates/{candidate_id}/execute")
+    assert exec_conflict_res.status_code == 409
+    assert "reasons" in exec_conflict_res.json()["detail"]
+    reasons = exec_conflict_res.json()["detail"]["reasons"]
+    assert any("merge_failed" in r for r in reasons)
+
+    # Verify candidate status is still approved
+    candidates_after = client.get(f"/projects/{proj_id}/merge-candidates").json()
+    assert candidates_after[0]["status"] == "approved"
+    assert candidates_after[0]["merged_at"] is None
+
+    # Assert final git status is clean (the merge was aborted successfully)
+    assert git(["status", "--porcelain"], cwd=source).strip() == ""
+
+    # H. Action on missing candidate returns 404
+    exec_missing = client.post("/merge-candidates/999999/execute")
+    assert exec_missing.status_code == 404
+
+
+
 
 
