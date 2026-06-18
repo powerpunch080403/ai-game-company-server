@@ -1867,3 +1867,62 @@ class Repository:
                 (timestamp, timestamp, candidate_id),
             )
         return self.get_merge_candidate(candidate_id)
+
+    def dry_run_merge_candidate(self, candidate_id: int) -> dict[str, Any]:
+        candidate = self.get_merge_candidate(candidate_id)
+        reasons = []
+
+        # 1. Check approved status
+        if candidate.get("status") != "approved":
+            reasons.append("not_approved")
+
+        # 2. Check branch name
+        if not candidate.get("branch_name"):
+            reasons.append("missing_branch_name")
+
+        # 3. Check base commit
+        if not candidate.get("base_commit"):
+            reasons.append("missing_base_commit")
+
+        # 4. Check linked task
+        task_id = candidate.get("task_id")
+        task_status = None
+        try:
+            task = self.get_task(task_id)
+            task_status = task.get("status")
+            if task_status != "success":
+                reasons.append("task_not_success")
+        except KeyError:
+            reasons.append("missing_task")
+
+        # 5. Check workspace HEAD for stale_base
+        if candidate.get("base_commit"):
+            project = self._project_for_task(task_id)
+            if project:
+                ws = project.get("workspace_path") or ""
+                db = project.get("base_branch") or "main"
+                if ws:
+                    try:
+                        current_commit = get_current_base_commit(ws, db)
+                        if not current_commit:
+                            reasons.append("workspace_unavailable")
+                        elif current_commit != candidate["base_commit"]:
+                            reasons.append("stale_base")
+                    except Exception:
+                        reasons.append("workspace_unavailable")
+                else:
+                    reasons.append("workspace_unavailable")
+            else:
+                reasons.append("workspace_unavailable")
+
+        ready = (len(reasons) == 0)
+
+        return {
+            "candidate_id": candidate_id,
+            "ready": ready,
+            "status": candidate.get("status"),
+            "reasons": reasons,
+            "branch_name": candidate.get("branch_name"),
+            "base_commit": candidate.get("base_commit"),
+            "task_status": task_status,
+        }

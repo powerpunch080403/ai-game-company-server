@@ -297,3 +297,13 @@ class MergeCandidateRead(BaseModel):
     updated_at: str
     merged_at: str | None = None
     rejected_at: str | None = None
+
+
+class MergeCandidateDryRunRead(BaseModel):
+    candidate_id: int
+    ready: bool
+    status: str
+    reasons: list[str] = []
+    branch_name: str | None = None
+    base_commit: str | None = None
+    task_status: str | None = None

@@ -2366,4 +2366,145 @@ def test_merge_candidate_review_actions(client: TestClient) -> None:
     assert missing_reject.status_code == 404
 
 
+def test_merge_candidate_dry_run_checks(client: TestClient, tmp_path: Path) -> None:
+    # Setup project with git repository so get_current_base_commit works
+    remote, _workspace = make_git_repo(tmp_path)
+    source = tmp_path / "source"
+
+    proj_id, sub_epic_id = _make_project_with_repo(client, source, remote)
+
+    # Create task with branch
+    task = client.post(f"/sub-epics/{sub_epic_id}/tasks", json={
+        "role": "code_worker",
+        "goal": "Dry-run test task",
+        "requirements": ["X"],
+        "success_criteria": ["Y"],
+        "estimated_minutes": 15,
+        "branch": "worker/dryrun-branch",
+    }).json()
+
+    # Lease task (sets base_commit)
+    leased = client.post("/workers/worker-dr/lease", json={"role": "code_worker", "lease_minutes": 30}).json()
+    assert leased["base_commit"] is not None
+
+    # Report completion (succeeds, creates queued candidate)
+    report = _report_payload("success")
+    completed = client.post(f"/workers/worker-dr/tasks/{task['id']}/report", json=report).json()
+    assert completed["status"] == "success"
+
+    # Get candidate ID
+    candidates = client.get(f"/projects/{proj_id}/merge-candidates").json()
+    assert len(candidates) == 1
+    candidate = candidates[0]
+    candidate_id = candidate["id"]
+
+    # B. queued candidate returns ready = False with not_approved
+    dr_res = client.post(f"/merge-candidates/{candidate_id}/dry-run")
+    assert dr_res.status_code == 200
+    dr_data = dr_res.json()
+    assert dr_data["ready"] is False
+    assert "not_approved" in dr_data["reasons"]
+
+    # Approve candidate
+    client.post(f"/merge-candidates/{candidate_id}/approve")
+
+    # A. approved candidate with branch/base/task success returns ready = True
+    dr_res_approved = client.post(f"/merge-candidates/{candidate_id}/dry-run")
+    assert dr_res_approved.status_code == 200
+    dr_approved_data = dr_res_approved.json()
+    assert dr_approved_data["ready"] is True
+    assert dr_approved_data["reasons"] == []
+
+    # H. dry-run does not mutate candidate status, task status, or merged_at
+    candidates_after = client.get(f"/projects/{proj_id}/merge-candidates").json()
+    assert candidates_after[0]["status"] == "approved"
+    assert candidates_after[0]["merged_at"] is None
+
+    # D. approved candidate missing branch returns ready = False with missing_branch_name
+    repo = app.dependency_overrides[get_repo]()
+    repo.conn.execute("UPDATE merge_candidates SET branch_name = NULL WHERE id = ?", (candidate_id,))
+    repo.conn.commit()
+
+    dr_res_nobranch = client.post(f"/merge-candidates/{candidate_id}/dry-run")
+    assert dr_res_nobranch.json()["ready"] is False
+    assert "missing_branch_name" in dr_res_nobranch.json()["reasons"]
+
+    # Restore branch_name
+    repo.conn.execute("UPDATE merge_candidates SET branch_name = 'worker/dryrun-branch' WHERE id = ?", (candidate_id,))
+    repo.conn.commit()
+
+    # E. approved candidate missing base commit returns ready = False with missing_base_commit
+    repo.conn.execute("UPDATE merge_candidates SET base_commit = NULL WHERE id = ?", (candidate_id,))
+    repo.conn.commit()
+
+    dr_res_nobase = client.post(f"/merge-candidates/{candidate_id}/dry-run")
+    assert dr_res_nobase.json()["ready"] is False
+    assert "missing_base_commit" in dr_res_nobase.json()["reasons"]
+
+    # Restore base_commit
+    repo.conn.execute("UPDATE merge_candidates SET base_commit = ? WHERE id = ?", (leased["base_commit"], candidate_id))
+    repo.conn.commit()
+
+    # F. candidate whose linked task is not success returns ready = False with task_not_success
+    repo.conn.execute("UPDATE tasks SET status = 'failed' WHERE id = ?", (task["id"],))
+    repo.conn.commit()
+
+    dr_res_not_success = client.post(f"/merge-candidates/{candidate_id}/dry-run")
+    assert dr_res_not_success.json()["ready"] is False
+    assert "task_not_success" in dr_res_not_success.json()["reasons"]
+
+    # Restore task status
+    repo.conn.execute("UPDATE tasks SET status = 'success' WHERE id = ?", (task["id"],))
+    repo.conn.commit()
+
+    # E. Action on missing candidate returns 404
+    dr_missing = client.post("/merge-candidates/999999/dry-run")
+    assert dr_missing.status_code == 404
+
+
+def test_dry_run_stale_base(client: TestClient, tmp_path: Path) -> None:
+    # I. stale_base is returned when current commit differs from candidate base_commit
+    remote, _workspace = make_git_repo(tmp_path)
+    source = tmp_path / "source"
+
+    proj_id, sub_epic_id = _make_project_with_repo(client, source, remote)
+
+    task = client.post(f"/sub-epics/{sub_epic_id}/tasks", json={
+        "role": "code_worker",
+        "goal": "Stale dryrun task",
+        "requirements": ["X"],
+        "success_criteria": ["Y"],
+        "estimated_minutes": 15,
+        "branch": "worker/stale-dr",
+    }).json()
+
+    # Lease
+    leased = client.post("/workers/worker-staledr/lease", json={"role": "code_worker", "lease_minutes": 30}).json()
+    assert leased["base_commit"] is not None
+
+    # Report completion
+    report = _report_payload("success")
+    client.post(f"/workers/worker-staledr/tasks/{task['id']}/report", json=report).json()
+
+    # Get candidate ID
+    candidates = client.get(f"/projects/{proj_id}/merge-candidates").json()
+    candidate_id = candidates[0]["id"]
+
+    # Approve
+    client.post(f"/merge-candidates/{candidate_id}/approve")
+
+    # Advance main in the source repo
+    (source / "STALE.md").write_text("stale\n", encoding="utf-8")
+    git(["add", "STALE.md"], cwd=source)
+    git(["commit", "-m", "Advance main"], cwd=source)
+
+    # Dry-run should report stale_base
+    dr_res = client.post(f"/merge-candidates/{candidate_id}/dry-run")
+    assert dr_res.status_code == 200
+    dr_data = dr_res.json()
+    assert dr_data["ready"] is False
+    assert "stale_base" in dr_data["reasons"]
+
+
+
 

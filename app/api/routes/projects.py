@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException
 
 from app.api.deps import get_repo, not_found
 from app.repository import Repository
-from app.schemas import EpicCreate, ProjectConfigUpdate, ProjectCreate, SubEpicCreate, MergeCandidateRead
+from app.schemas import EpicCreate, ProjectConfigUpdate, ProjectCreate, SubEpicCreate, MergeCandidateRead, MergeCandidateDryRunRead
 
 
 router = APIRouter()
@@ -88,3 +88,11 @@ def reject_merge_candidate(candidate_id: int, repo: Repository = Depends(get_rep
         raise not_found(exc) from exc
     except ValueError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+@router.post("/merge-candidates/{candidate_id}/dry-run", response_model=MergeCandidateDryRunRead)
+def dry_run_merge_candidate(candidate_id: int, repo: Repository = Depends(get_repo)) -> dict:
+    try:
+        return repo.dry_run_merge_candidate(candidate_id)
+    except KeyError as exc:
+        raise not_found(exc) from exc
