@@ -471,6 +471,35 @@ GAME_COMPANY_OWNER_COMMAND=cat {prompt_file}
 `GAME_COMPANY_OWNER_COMMAND` may use `{prompt_file}` and `{run_dir}`. If no
 placeholder is used, the prompt is passed through standard input.
 
+## Project Search API
+
+The server includes a read-only ripgrep-powered search endpoint for inspecting a project's configured local workspace.
+
+```text
+POST /projects/{project_id}/search
+```
+
+Example request:
+
+```json
+{
+  "query": "def complete_task",
+  "glob": "app/**/*.py",
+  "max_results": 50
+}
+```
+
+The endpoint runs `rg` inside the project workspace and returns bounded results with relative paths, line numbers, and matched text. It does not require Discord Gateway, Codex CLI, external workers, or remote services.
+
+Safety constraints:
+
+* searches are read-only
+* commands are executed without `shell=True`
+* results use relative paths only
+* `.env`, `.git`, `node_modules`, virtualenvs, and cache folders are excluded by default
+* `max_results` is clamped
+* missing `rg` returns a clear service error
+
 ## Discord Mapping API
 
 Create a mapping from a Discord location to a server conversation:

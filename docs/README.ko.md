@@ -456,6 +456,35 @@ GAME_COMPANY_OWNER_COMMAND=cat {prompt_file}
 
 `GAME_COMPANY_OWNER_COMMAND` 환경 변수는 `{prompt_file}` 및 `{run_dir}`을 매개변수로 사용할 수 있습니다. 플레이스홀더를 사용하지 않는 경우 프롬프트는 표준 입력 stdin을 통해 전달됩니다.
 
+## 프로젝트 검색 API
+
+서버는 프로젝트에 설정된 로컬 workspace를 읽기 전용으로 검색할 수 있는 ripgrep 기반 검색 엔드포인트를 제공합니다.
+
+```text
+POST /projects/{project_id}/search
+```
+
+예시 요청:
+
+```json
+{
+  "query": "def complete_task",
+  "glob": "app/**/*.py",
+  "max_results": 50
+}
+```
+
+이 엔드포인트는 프로젝트 workspace 안에서 `rg`를 실행하고, 상대 경로, 줄 번호, 매칭된 텍스트를 제한된 개수로 반환합니다. Discord Gateway, Codex CLI, 외부 워커, 원격 서비스는 필요하지 않습니다.
+
+안전 제약:
+
+* 검색은 읽기 전용입니다.
+* 명령은 `shell=True` 없이 실행됩니다.
+* 결과는 상대 경로만 반환합니다.
+* `.env`, `.git`, `node_modules`, virtualenv, 캐시 폴더는 기본적으로 제외됩니다.
+* `max_results`는 안전한 최대값으로 제한됩니다.
+* `rg`가 설치되어 있지 않으면 명확한 서비스 오류를 반환합니다.
+
 ## Discord Mapping API
 
 Discord 채널/스레드에서 서버 대화로의 매핑 생성 예시:
