@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException
 
 from app.api.deps import get_repo, not_found
 from app.repository import Repository
-from app.schemas import EpicCreate, ProjectConfigUpdate, ProjectCreate, SubEpicCreate, MergeCandidateRead, MergeCandidateDryRunRead, MergeCandidateExecuteRead
+from app.schemas import EpicCreate, ProjectConfigUpdate, ProjectCreate, SubEpicCreate, MergeCandidateRead, MergeCandidateDryRunRead, MergeCandidateExecuteRead, ProjectSearchRequest, ProjectSearchResponse
 
 
 router = APIRouter()
@@ -132,3 +132,24 @@ def execute_merge_candidate(candidate_id: int, repo: Repository = Depends(get_re
                 "reasons": [str(exc)]
             }
         ) from exc
+
+
+@router.post("/projects/{project_id}/search", response_model=ProjectSearchResponse)
+def search_project(project_id: int, payload: ProjectSearchRequest, repo: Repository = Depends(get_repo)) -> dict:
+    query = payload.query.strip() if payload.query else ""
+    if not query:
+        raise HTTPException(status_code=422, detail="query must not be empty")
+    max_results = min(max(payload.max_results, 1), 100)
+    if payload.glob and (".." in payload.glob or payload.glob.startswith("/") or payload.glob.startswith("\\")):
+        raise HTTPException(status_code=422, detail="invalid glob pattern")
+
+    try:
+        # Check project existence
+        repo.get_project(project_id)
+        return repo.search_project_workspace(project_id, query, payload.glob, max_results)
+    except KeyError as exc:
+        raise not_found(exc) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc

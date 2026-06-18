@@ -2023,3 +2023,92 @@ class Repository:
             self._add_task_event(task_id, "merged", f"Merge candidate {candidate_id} branch {branch_name} merged successfully")
 
         return self.get_merge_candidate(candidate_id)
+
+    def search_project_workspace(self, project_id: int, query: str, glob: str | None, max_results: int) -> dict[str, Any]:
+        project = self.get_project(project_id)
+        ws = project.get("workspace_path") or ""
+        if not ws:
+            raise ValueError("workspace_path is missing")
+        from pathlib import Path as _Path
+        ws_path = _Path(ws).resolve()
+        if not ws_path.exists() or not ws_path.is_dir():
+            raise ValueError("workspace_path does not exist or is not a directory")
+
+        # Command construction
+        cmd = [
+            "rg",
+            "--line-number",
+            "--no-heading",
+            "--color", "never",
+            "--hidden",
+            "--glob", "!.git/**",
+            "--glob", "!**/.env",
+            "--glob", "!**/.env.*",
+            "--glob", "!**/node_modules/**",
+            "--glob", "!**/.venv/**",
+            "--glob", "!**/venv/**",
+            "--glob", "!**/__pycache__/**",
+        ]
+        if glob:
+            if ".." in glob or glob.startswith("/") or glob.startswith("\\"):
+                raise ValueError("invalid glob pattern")
+            cmd.extend(["--glob", glob])
+
+        cmd.extend(["--", query])
+
+        try:
+            res = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                cwd=str(ws_path),
+                timeout=10,
+                shell=False,
+            )
+        except FileNotFoundError as exc:
+            raise FileNotFoundError("ripgrep command 'rg' not found in PATH") from exc
+
+        results = []
+        truncated = False
+
+        if res.returncode == 0 or res.returncode == 1:
+            lines = res.stdout.splitlines()
+            for line_content in lines:
+                if not line_content.strip():
+                    continue
+                parts = line_content.split(":", 2)
+                if len(parts) == 3:
+                    path, line_num_str, text = parts
+                    try:
+                        line_num = int(line_num_str)
+                    except ValueError:
+                        continue
+
+                    # Prevent path traversal
+                    try:
+                        resolved_file_path = (ws_path / path).resolve()
+                        if ws_path not in resolved_file_path.parents and resolved_file_path != ws_path:
+                            continue
+                    except Exception:
+                        continue
+
+                    results.append({
+                        "path": path,
+                        "line": line_num,
+                        "text": text,
+                    })
+                    if len(results) >= max_results:
+                        if len(lines) > max_results or len(results) < len(lines):
+                            truncated = True
+                        break
+        else:
+            err = res.stderr.strip()
+            if "regex parse error" in err or "invalid" in err:
+                raise ValueError(f"invalid query pattern: {err}")
+
+        return {
+            "project_id": project_id,
+            "query": query,
+            "results": results[:max_results],
+            "truncated": truncated,
+        }

@@ -317,3 +317,22 @@ class MergeCandidateExecuteRead(BaseModel):
     branch_name: str | None = None
     base_commit: str | None = None
     merged_at: str | None = None
+
+
+class ProjectSearchRequest(BaseModel):
+    query: str
+    glob: str | None = None
+    max_results: int = 50
+
+
+class ProjectSearchResult(BaseModel):
+    path: str
+    line: int
+    text: str
+
+
+class ProjectSearchResponse(BaseModel):
+    project_id: int
+    query: str
+    results: list[ProjectSearchResult]
+    truncated: bool = False
