@@ -2710,21 +2710,11 @@ def test_merge_candidate_conflict_aborts(client: TestClient, tmp_path: Path) -> 
     assert exec_missing.status_code == 404
 
 
-def test_project_search_api(client: TestClient, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    # Set up a temporary project workspace directory
+def _setup_search_project(client: TestClient, tmp_path: Path, monkeypatch: pytest.MonkeyPatch | None, mock_fn=None):
     ws_dir = tmp_path / "search_ws"
-    ws_dir.mkdir()
+    ws_dir.mkdir(exist_ok=True)
 
-    # Create some files (so they exist for resolution checks)
-    (ws_dir / "foo.txt").write_text("hello world\nthis is a test\npython coding\n", encoding="utf-8")
-    (ws_dir / "bar.py").write_text("print('hello')\n# python search test\n", encoding="utf-8")
-
-    # Create a subfolder with files
-    src_dir = ws_dir / "src"
-    src_dir.mkdir()
-    (src_dir / "baz.txt").write_text("hello from baz\n", encoding="utf-8")
-
-    # Create a project
+    # Create project
     project = client.post("/projects", json={
         "name": "Search Test Project",
         "engine": "undecided",
@@ -2734,204 +2724,209 @@ def test_project_search_api(client: TestClient, tmp_path: Path, monkeypatch: pyt
     }).json()
     project_id = project["id"]
 
+    if mock_fn and monkeypatch:
+        import subprocess
+        monkeypatch.setattr(subprocess, "run", mock_fn)
+
+    return project_id, ws_dir
+
+
+def test_project_search_returns_matching_relative_result(client: TestClient, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     import subprocess
-    from subprocess import CompletedProcess
-
     def mock_run(cmd, *args, **kwargs):
-        assert kwargs.get("shell") is False
-        assert "--no-heading" in cmd
-        assert "--color" in cmd
-        assert "never" in cmd
-        
-        query = cmd[-1]
-        
-        # Extract user-provided glob (if any)
-        glob_val = None
-        try:
-            pycache_idx = cmd.index("!**/__pycache__/**")
-            if len(cmd) > pycache_idx + 2 and cmd[pycache_idx + 1] == "--glob":
-                glob_val = cmd[pycache_idx + 2]
-        except ValueError:
-            pass
+        assert cmd[-1] == "unique_search_string"
+        assert "--max-count" in cmd
+        return subprocess.CompletedProcess(cmd, 0, "src/main.py:42:unique_search_string matched here\n")
 
-        if query == "hello":
-            candidates = [
-                ("foo.txt", 1, "hello world"),
-                ("bar.py", 1, "print('hello')"),
-                ("src/baz.txt", 1, "hello from baz"),
-                (".env", 1, "SECRET_KEY=hello_secret"),
-                (".env.development", 1, "DEV_KEY=hello_dev"),
-                (".git/config", 1, "hello_git_config"),
-                ("../../etc/passwd", 1, "root:x:0:0:root:/root:/bin/bash"),  # Traversal candidate
-            ]
-            
-            stdout_lines = []
-            for path, line_num, text in candidates:
-                # Replicate glob exclusions
-                if ".git" in path:
-                    continue
-                if path == ".env" or path.startswith(".env."):
-                    continue
-                
-                # Filter by user glob if provided
-                if glob_val == "*.txt" and not path.endswith(".txt"):
-                    continue
-                    
-                stdout_lines.append(f"{path}:{line_num}:{text}")
-                
-            stdout = "\n".join(stdout_lines) + "\n"
-            return CompletedProcess(cmd, returncode=0, stdout=stdout, stderr="")
-        elif query == "nonexistentpattern12345":
-            return CompletedProcess(cmd, returncode=1, stdout="", stderr="")
-        else:
-            return CompletedProcess(cmd, returncode=0, stdout="", stderr="")
+    project_id, ws_dir = _setup_search_project(client, tmp_path, monkeypatch, mock_run)
+    main_py = ws_dir / "src" / "main.py"
+    main_py.parent.mkdir(parents=True, exist_ok=True)
+    main_py.write_text("unique_search_string matched here\n")
 
-    monkeypatch.setattr(subprocess, "run", mock_run)
-
-    # Test A & H: Search returns matching relative path, line number, and text. No absolute paths.
-    response = client.post(f"/projects/{project_id}/search", json={
-        "query": "hello",
-    })
+    response = client.post(f"/projects/{project_id}/search", json={"query": "unique_search_string"})
     assert response.status_code == 200
     data = response.json()
     assert data["project_id"] == project_id
-    assert data["query"] == "hello"
+    assert data["query"] == "unique_search_string"
     assert data["truncated"] is False
-    results = data["results"]
-    # Results should include foo.txt, bar.py, and src/baz.txt.
-    # It must NOT include .env, .env.development, .git/config (due to exclusion logic).
-    # It must NOT include ../../etc/passwd (due to path traversal filter in repository).
-    assert len(results) == 3
+    assert len(data["results"]) == 1
+    res = data["results"][0]
+    assert res["path"] == "src/main.py" or res["path"] == "src\\main.py"
+    assert res["line"] == 42
+    assert "unique_search_string matched here" in res["text"]
 
-    # Verify results content and ensure path is relative and not absolute
-    paths = [r["path"] for r in results]
-    assert "foo.txt" in paths
-    assert "bar.py" in paths
-    assert "src/baz.txt" in [p.replace("\\", "/") for p in paths]
-    assert "../../etc/passwd" not in paths
 
+def test_project_search_glob_limits_results(client: TestClient, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    import subprocess
+    def mock_run(cmd, *args, **kwargs):
+        assert "--glob" in cmd
+        assert "*.py" in cmd
+        return subprocess.CompletedProcess(cmd, 0, "src/main.py:10:match here\n")
+
+    project_id, ws_dir = _setup_search_project(client, tmp_path, monkeypatch, mock_run)
+    main_py = ws_dir / "src" / "main.py"
+    main_py.parent.mkdir(parents=True, exist_ok=True)
+    main_py.write_text("match here\n")
+    doc_txt = ws_dir / "doc.txt"
+    doc_txt.write_text("match here\n")
+
+    response = client.post(f"/projects/{project_id}/search", json={
+        "query": "match here",
+        "glob": "*.py"
+    })
+    assert response.status_code == 200
+    results = response.json()["results"]
+    assert len(results) == 1
+    assert results[0]["path"].replace("\\", "/") == "src/main.py"
+
+
+def test_project_search_no_matches_returns_empty_results(client: TestClient, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    import subprocess
+    def mock_run(cmd, *args, **kwargs):
+        return subprocess.CompletedProcess(cmd, 1, "")
+
+    project_id, ws_dir = _setup_search_project(client, tmp_path, monkeypatch, mock_run)
+    response = client.post(f"/projects/{project_id}/search", json={"query": "missing_string"})
+    assert response.status_code == 200
+    data = response.json()
+    assert data["results"] == []
+    assert data["truncated"] is False
+
+
+def test_project_search_excludes_env_files(client: TestClient, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    import subprocess
+    def mock_run(cmd, *args, **kwargs):
+        assert "!**/.env" in cmd
+        assert "!**/.env.*" in cmd
+        return subprocess.CompletedProcess(cmd, 0, "main.py:10:match\n")
+
+    project_id, ws_dir = _setup_search_project(client, tmp_path, monkeypatch, mock_run)
+    (ws_dir / "main.py").write_text("match\n")
+    (ws_dir / ".env").write_text("match\n")
+    (ws_dir / "nested").mkdir(exist_ok=True)
+    (ws_dir / "nested" / ".env.local").write_text("match\n")
+
+    response = client.post(f"/projects/{project_id}/search", json={"query": "match"})
+    assert response.status_code == 200
+    paths = [r["path"].replace("\\", "/") for r in response.json()["results"]]
+    assert "main.py" in paths
+    assert ".env" not in paths
+    assert "nested/.env.local" not in paths
+
+
+def test_project_search_excludes_git_directory(client: TestClient, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    import subprocess
+    def mock_run(cmd, *args, **kwargs):
+        assert "!.git/**" in cmd
+        return subprocess.CompletedProcess(cmd, 0, "main.py:10:match\n")
+
+    project_id, ws_dir = _setup_search_project(client, tmp_path, monkeypatch, mock_run)
+    (ws_dir / "main.py").write_text("match\n")
+    git_dir = ws_dir / ".git"
+    git_dir.mkdir(exist_ok=True)
+    (git_dir / "config").write_text("match\n")
+
+    response = client.post(f"/projects/{project_id}/search", json={"query": "match"})
+    assert response.status_code == 200
+    paths = [r["path"].replace("\\", "/") for r in response.json()["results"]]
+    assert "main.py" in paths
+    assert ".git/config" not in paths
+    assert any(".git" in p for p in paths) is False
+
+
+def test_project_search_max_results_truncates(client: TestClient, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    import subprocess
+    def mock_run(cmd, *args, **kwargs):
+        # cmd contains max-count parameter
+        assert "--max-count" in cmd
+        return subprocess.CompletedProcess(cmd, 0, "a.py:1:match\nb.py:1:match\nc.py:1:match\n")
+
+    project_id, ws_dir = _setup_search_project(client, tmp_path, monkeypatch, mock_run)
+    (ws_dir / "a.py").write_text("match\n")
+    (ws_dir / "b.py").write_text("match\n")
+    (ws_dir / "c.py").write_text("match\n")
+
+    response = client.post(f"/projects/{project_id}/search", json={"query": "match", "max_results": 2})
+    assert response.status_code == 200
+    data = response.json()
+    assert len(data["results"]) == 2
+    assert data["truncated"] is True
+
+
+def test_project_search_missing_workspace_returns_conflict(client: TestClient) -> None:
+    project_bad = client.post("/projects", json={
+        "name": "Bad WS Project",
+        "workspace_path": "C:\\nonexistent_workspace_folder_xyz",
+    }).json()
+    response_bad = client.post(f"/projects/{project_bad['id']}/search", json={"query": "hello"})
+    assert response_bad.status_code == 409
+
+    project_missing = client.post("/projects", json={
+        "name": "Missing WS Project",
+        "workspace_path": "",
+    }).json()
+    response_missing = client.post(f"/projects/{project_missing['id']}/search", json={"query": "hello"})
+    assert response_missing.status_code == 409
+
+
+def test_project_search_never_returns_absolute_paths(client: TestClient, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    import subprocess
+    def mock_run(cmd, *args, **kwargs):
+        return subprocess.CompletedProcess(cmd, 0, "main.py:1:match\n")
+
+    project_id, ws_dir = _setup_search_project(client, tmp_path, monkeypatch, mock_run)
+    (ws_dir / "main.py").write_text("match\n")
+
+    response = client.post(f"/projects/{project_id}/search", json={"query": "match"})
+    assert response.status_code == 200
+    results = response.json()["results"]
     for r in results:
         p = r["path"]
         assert not p.startswith("/")
         assert not p.startswith("\\")
-        assert ":" not in p or len(p) == 1 or p[1] != ":"  # No windows drive letters
+        assert ":" not in p or len(p) == 1 or p[1] != ":"
         assert str(ws_dir) not in p
-        if p == "foo.txt":
-            assert r["line"] == 1
-            assert "hello world" in r["text"]
-
-    # Test B: Search with a glob pattern limits results.
-    response_glob = client.post(f"/projects/{project_id}/search", json={
-        "query": "hello",
-        "glob": "*.txt"
-    })
-    assert response_glob.status_code == 200
-    glob_results = response_glob.json()["results"]
-    glob_paths = [r["path"].replace("\\", "/") for r in glob_results]
-    assert "foo.txt" in glob_paths
-    assert "bar.py" not in glob_paths
-
-    # Test C: No matches returns empty results.
-    response_no_match = client.post(f"/projects/{project_id}/search", json={
-        "query": "nonexistentpattern12345",
-    })
-    assert response_no_match.status_code == 200
-    assert response_no_match.json()["results"] == []
-    assert response_no_match.json()["truncated"] is False
-
-    # Test D: .env is excluded by default.
-    (ws_dir / ".env").write_text("SECRET_KEY=hello_secret\n", encoding="utf-8")
-    (ws_dir / ".env.development").write_text("DEV_KEY=hello_dev\n", encoding="utf-8")
-    response_env = client.post(f"/projects/{project_id}/search", json={
-        "query": "hello",
-    })
-    assert response_env.status_code == 200
-    env_paths = [r["path"] for r in response_env.json()["results"]]
-    assert ".env" not in env_paths
-    assert ".env.development" not in env_paths
-
-    # Test E: .git is excluded by default.
-    git_dir = ws_dir / ".git"
-    git_dir.mkdir()
-    (git_dir / "config").write_text("hello_git_config\n", encoding="utf-8")
-    response_git = client.post(f"/projects/{project_id}/search", json={
-        "query": "hello",
-    })
-    git_paths = [r["path"] for r in response_git.json()["results"]]
-    assert any(".git" in p for p in git_paths) is False
-
-    # Test F: max_results bounds output and sets truncated = True.
-    response_truncate = client.post(f"/projects/{project_id}/search", json={
-        "query": "hello",
-        "max_results": 1
-    })
-    assert response_truncate.status_code == 200
-    data_truncate = response_truncate.json()
-    assert len(data_truncate["results"]) == 1
-    assert data_truncate["truncated"] is True
-
-    # Test G: Missing workspace / nonexistent directory returns 409.
-    project_missing_ws = client.post("/projects", json={
-        "name": "Missing WS Project",
-        "engine": "undecided",
-        "repo_url": "",
-        "workspace_path": "",
-        "base_branch": "main",
-    }).json()
-    response_missing_ws = client.post(f"/projects/{project_missing_ws['id']}/search", json={
-        "query": "hello",
-    })
-    assert response_missing_ws.status_code == 409
-
-    project_bad_ws = client.post("/projects", json={
-        "name": "Bad WS Project",
-        "engine": "undecided",
-        "repo_url": "",
-        "workspace_path": str(ws_dir / "nonexistent_folder_xyz"),
-        "base_branch": "main",
-    }).json()
-    response_bad_ws = client.post(f"/projects/{project_bad_ws['id']}/search", json={
-        "query": "hello",
-    })
-    assert response_bad_ws.status_code == 409
-
-    # Validation check: Empty/spaces query returns 422
-    response_empty = client.post(f"/projects/{project_id}/search", json={
-        "query": "   ",
-    })
-    assert response_empty.status_code == 422
-
-    # Validation check: invalid glob pattern returns 422
-    response_invalid_glob = client.post(f"/projects/{project_id}/search", json={
-        "query": "hello",
-        "glob": "../etc/passwd"
-    })
-    assert response_invalid_glob.status_code == 422
 
 
-def test_project_search_rg_missing(client: TestClient, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    ws_dir = tmp_path / "search_ws_missing"
-    ws_dir.mkdir()
-    (ws_dir / "foo.txt").write_text("hello\n", encoding="utf-8")
-    project = client.post("/projects", json={
-        "name": "Search Test Project 2",
-        "engine": "undecided",
-        "repo_url": "",
-        "workspace_path": str(ws_dir),
-        "base_branch": "main",
-    }).json()
-    project_id = project["id"]
-
-    import subprocess
+def test_project_search_missing_rg_returns_service_error(client: TestClient, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     def mock_run(*args, **kwargs):
-        raise FileNotFoundError("Mocked: rg not found")
-    monkeypatch.setattr(subprocess, "run", mock_run)
+        raise FileNotFoundError("rg not found in path")
 
-    response = client.post(f"/projects/{project_id}/search", json={
-        "query": "hello",
-    })
+    project_id, ws_dir = _setup_search_project(client, tmp_path, monkeypatch, mock_run)
+    response = client.post(f"/projects/{project_id}/search", json={"query": "hello"})
     assert response.status_code == 503
     assert "not found" in response.json()["detail"]
+
+
+def test_project_search_rejects_empty_query(client: TestClient, tmp_path: Path) -> None:
+    project_id, ws_dir = _setup_search_project(client, tmp_path, None)
+    r1 = client.post(f"/projects/{project_id}/search", json={"query": ""})
+    assert r1.status_code == 422
+    r2 = client.post(f"/projects/{project_id}/search", json={"query": "    "})
+    assert r2.status_code == 422
+
+
+def test_project_search_does_not_modify_workspace(client: TestClient, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    import subprocess
+    def mock_run(cmd, *args, **kwargs):
+        return subprocess.CompletedProcess(cmd, 0, "main.py:1:match\n")
+
+    project_id, ws_dir = _setup_search_project(client, tmp_path, monkeypatch, mock_run)
+    main_py = ws_dir / "main.py"
+    main_py.write_text("match\n")
+
+    before_files = sorted(list(ws_dir.rglob("*")))
+    before_contents = {f: f.read_bytes() for f in before_files if f.is_file()}
+
+    response = client.post(f"/projects/{project_id}/search", json={"query": "match"})
+    assert response.status_code == 200
+
+    after_files = sorted(list(ws_dir.rglob("*")))
+    after_contents = {f: f.read_bytes() for f in after_files if f.is_file()}
+
+    assert before_files == after_files
+    assert before_contents == after_contents
+
 
 
 

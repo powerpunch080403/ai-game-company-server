@@ -2048,6 +2048,7 @@ class Repository:
             "--glob", "!**/.venv/**",
             "--glob", "!**/venv/**",
             "--glob", "!**/__pycache__/**",
+            "--max-count", str(max_results + 1),
         ]
         if glob:
             if ".." in glob or glob.startswith("/") or glob.startswith("\\"):
