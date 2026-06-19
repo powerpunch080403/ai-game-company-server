@@ -28,6 +28,13 @@ User / Owner
 The repo is currently public so friends and other AI agents can inspect the
 design. Do not put real secrets in this repository.
 
+## Long-Term Product Vision
+
+The long-term vision of the AI Project Control Server is to coordinate human contributors and AI workers across Personal, Team, and Enterprise deployment stages, maintaining task leases, scopes, and locks as the shared grammar of project execution.
+
+For the complete product definition, capability-based workers, workflow policies, and frontend/database evolution plans, see:
+* **[Product Vision and Long-Term Direction](docs/PRODUCT_VISION.md)**
+
 ## Current Status
 
 v1 is usable for controlled Task 1 bootstrap. Golden Path rehearsal has been successfully completed, providing the minimum operational baseline to begin the first portfolio game development.
@@ -68,6 +75,7 @@ Not implemented yet:
 
 ## Recommended Reading
 
+- [Product Vision](docs/PRODUCT_VISION.md)
 - [Architecture Blueprint](docs/ARCHITECTURE_BLUEPRINT.md)
 - [Context Handoff](docs/CONTEXT_HANDOFF.md)
 - [Roadmap](docs/ROADMAP.md)

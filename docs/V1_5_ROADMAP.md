@@ -2,6 +2,9 @@
 
 이 문서는 AI Game Company Server v1.5의 범위와 목표, 그리고 실전 투입 준비 단계인 v1.0 이후의 확장 마일스톤을 기술합니다.
 
+> [!NOTE]
+> AI Project Control Server의 전체적인 제품 정의, 장기 비전 및 다년도 개발 단계(Phases)는 [PRODUCT_VISION.md](PRODUCT_VISION.md)를 참조하십시오. 이 로드맵 문서는 그 비전 아래에서 구체적인 v1.5 마일스톤과 범위(In-Scope/Out-of-Scope)에 집중합니다.
+
 > [!IMPORTANT]
 > **V1.5 Transition Gate**: 이 v1.5 로드맵은 v1.0 오너 스모크 테스트(Owner Smoke Test) 승인 통과 후에 공식적으로 개시되는 다음 단계의 계획입니다. 일부 v1.5 스타일의 테스트 뼈대나 기초 스키마가 현재 코드베이스에 이미 구성되어 있을 수 있으나, 공식적인 v1.5 확장 단계는 v1 승인 결과가 PASS로 기록된 이후에 본격적으로 시작됩니다.
 

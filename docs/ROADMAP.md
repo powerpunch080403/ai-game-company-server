@@ -133,6 +133,7 @@ Most of this is already implemented.
      tool.
 
 6. Documentation
+   - Product Vision and long-term direction documented in [PRODUCT_VISION.md](PRODUCT_VISION.md).
    - Architecture blueprint documented in `docs/ARCHITECTURE_BLUEPRINT.md`.
    - Hardware/machine inventory documented in `docs/HARDWARE_ENVIRONMENT.md`.
    - Add API operation examples.
