@@ -121,6 +121,28 @@ def format_context_status(status: dict[str, Any] | None) -> str:
     return f"Context: ok ({estimated}/{threshold} estimated tokens)."
 
 
+def compact_owner_run_text(text: str, limit: int = 1800) -> str:
+    text = text.strip()
+    if len(text) <= limit:
+        return text
+    return text[:limit].rstrip() + "\n\n[truncated]"
+
+
+def compact_owner_run_error(stderr: str) -> str:
+    lines = [line.strip() for line in stderr.splitlines() if line.strip()]
+    meaningful = [
+        line
+        for line in lines
+        if line.startswith("ERROR:")
+        or "usage limit" in line.lower()
+        or "timed out" in line.lower()
+        or "not configured" in line.lower()
+        or "invalid" in line.lower()
+    ]
+    selected = meaningful[-3:] if meaningful else lines[-5:]
+    return compact_owner_run_text("\n".join(selected) or stderr)
+
+
 def format_owner_run_result(result: dict[str, Any]) -> str:
     run_id = result.get("id", "?")
     status = result.get("status", "unknown")
@@ -128,17 +150,16 @@ def format_owner_run_result(result: dict[str, Any]) -> str:
     stderr = str(result.get("stderr") or "").strip()
 
     if stdout:
-        if len(stdout) > 1800:
-            return stdout[:1800].rstrip() + "\n\n[truncated]"
-        return stdout
+        return compact_owner_run_text(stdout)
     if status == "success":
         return f"Owner run completed: #{run_id}."
     if status == "dry_run":
         return f"Owner run stored: #{run_id} (dry_run)."
     if status == "blocked":
-        return f"Owner run blocked: {stderr or 'GAME_COMPANY_OWNER_COMMAND is not configured.'}"
+        reason = compact_owner_run_error(stderr) if stderr else "GAME_COMPANY_OWNER_COMMAND is not configured."
+        return f"Owner run blocked: {reason}"
     if stderr:
-        return f"Owner run #{run_id} {status}: {stderr}"
+        return f"Owner run #{run_id} {status}: {compact_owner_run_error(stderr)}"
     return f"Owner run #{run_id} {status}."
 
 

@@ -12,6 +12,7 @@ def build_owner_prompt(objective: str, context: str) -> str:
 
 Responsibilities:
 - analyze the user's request
+- talk naturally with the human in Owner rooms
 - create projects, epics, sub epics, and worker tasks
 - define success criteria
 - keep worker scope small
@@ -44,7 +45,14 @@ User decision gates:
 - materially different game concepts
 - legal or licensing risk
 
-Return exactly these sections:
+Response mode:
+- If the user is greeting you, chatting casually, asking a general question, or
+  checking status, answer naturally in Korean. Do not use the task planning
+  section format for casual Owner-room conversation.
+- Use the task planning section format only when the user explicitly asks to
+  create, plan, split, assign, lease, review, retry, approve, or coordinate
+  project work.
+- When you do use the section format, return exactly these sections:
 1. decision_summary
 2. user_questions
 3. memory_writes
@@ -54,7 +62,8 @@ Return exactly these sections:
 7. tasks
 8. review_notes
 
-If no user decision is required, write "none" under user_questions.
+If no user decision is required in the section format, write "none" under
+user_questions.
 
 For each task include:
 - role

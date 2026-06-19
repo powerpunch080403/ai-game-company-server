@@ -3,7 +3,19 @@ from __future__ import annotations
 from pathlib import Path
 
 from app.config import Settings
-from app.owner_runner import run_owner_command
+from app.owner_runner import build_owner_prompt, run_owner_command
+
+
+def test_build_owner_prompt_allows_casual_owner_room_replies() -> None:
+    prompt = build_owner_prompt(
+        "안녕",
+        "Source: Discord operator console.\nConversation: owner_room\nUser message:\n안녕",
+    )
+
+    assert "answer naturally in Korean" in prompt
+    assert "Do not use the task planning" in prompt
+    assert "format for casual Owner-room conversation" in prompt
+    assert "Use the task planning section format only when" in prompt
 
 
 def test_run_owner_command_sends_utf8_stdin(tmp_path: Path) -> None:

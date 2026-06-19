@@ -165,6 +165,24 @@ def test_format_gateway_reply_for_context_and_owner_run() -> None:
     )
     assert success_reply == "안녕! 무엇을 도와줄까?"
 
+    failed_reply = format_gateway_reply(
+        FakeObject(
+            action_type="owner_room_message",
+            context_status=None,
+            needs_owner=True,
+            needs_approval=False,
+            owner_run_result={
+                "id": 7,
+                "status": "failed",
+                "stdout": "",
+                "stderr": "WARN noisy line\nERROR: You've hit your usage limit. Try again later.",
+            },
+            owner_run_payload=None,
+            summary="",
+        )
+    )
+    assert failed_reply == "Owner run #7 failed: ERROR: You've hit your usage limit. Try again later."
+
 
 def test_handle_discord_message_sends_reply() -> None:
     channel = FakeChannel("channel-1")
