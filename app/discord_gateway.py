@@ -121,6 +121,27 @@ def format_context_status(status: dict[str, Any] | None) -> str:
     return f"Context: ok ({estimated}/{threshold} estimated tokens)."
 
 
+def format_owner_run_result(result: dict[str, Any]) -> str:
+    run_id = result.get("id", "?")
+    status = result.get("status", "unknown")
+    stdout = str(result.get("stdout") or "").strip()
+    stderr = str(result.get("stderr") or "").strip()
+
+    if stdout:
+        if len(stdout) > 1800:
+            return stdout[:1800].rstrip() + "\n\n[truncated]"
+        return stdout
+    if status == "success":
+        return f"Owner run completed: #{run_id}."
+    if status == "dry_run":
+        return f"Owner run stored: #{run_id} (dry_run)."
+    if status == "blocked":
+        return f"Owner run blocked: {stderr or 'GAME_COMPANY_OWNER_COMMAND is not configured.'}"
+    if stderr:
+        return f"Owner run #{run_id} {status}: {stderr}"
+    return f"Owner run #{run_id} {status}."
+
+
 def format_gateway_reply(action: DiscordBotAction) -> str | None:
     if action.action_type == "unmapped_context":
         return None
@@ -150,9 +171,7 @@ def format_gateway_reply(action: DiscordBotAction) -> str | None:
             return f"결재 건 #{res.get('approval_id')} '{req_summary}'이(가) 성공적으로 {status_kor} 처리되었습니다."
     if action.needs_owner:
         if action.owner_run_result:
-            run_id = action.owner_run_result.get("id", "?")
-            status = action.owner_run_result.get("status", "unknown")
-            return f"Owner run stored: #{run_id} ({status})."
+            return format_owner_run_result(action.owner_run_result)
         if action.owner_run_payload:
             context_note = format_context_status(action.context_status)
             suffix = f" {context_note}" if context_note else ""

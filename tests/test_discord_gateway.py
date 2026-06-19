@@ -152,6 +152,19 @@ def test_format_gateway_reply_for_context_and_owner_run() -> None:
     )
     assert owner_reply == "Owner run stored: #5 (dry_run)."
 
+    success_reply = format_gateway_reply(
+        FakeObject(
+            action_type="owner_room_message",
+            context_status=None,
+            needs_owner=True,
+            needs_approval=False,
+            owner_run_result={"id": 6, "status": "success", "stdout": "안녕! 무엇을 도와줄까?"},
+            owner_run_payload=None,
+            summary="",
+        )
+    )
+    assert success_reply == "안녕! 무엇을 도와줄까?"
+
 
 def test_handle_discord_message_sends_reply() -> None:
     channel = FakeChannel("channel-1")

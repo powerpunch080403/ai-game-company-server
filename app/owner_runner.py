@@ -87,6 +87,7 @@ def run_owner_command(settings: Settings, prompt: str, run_dir: Path) -> tuple[i
         cwd=run_dir,
         input=prompt,
         text=True,
+        encoding="utf-8",
         shell=True,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
