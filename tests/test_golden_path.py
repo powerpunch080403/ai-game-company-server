@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import sqlite3
+import subprocess
 from collections.abc import Iterator
 from pathlib import Path
 
@@ -9,6 +10,7 @@ from fastapi.testclient import TestClient
 
 from app.config import Settings
 from app.db import SCHEMA
+from app.git_workspace import git_executable
 from app.main import app, get_repo, get_settings
 from app.repository import Repository
 
@@ -53,7 +55,35 @@ def client(tmp_path: Path) -> Iterator[TestClient]:
     app.dependency_overrides.clear()
 
 
+def git(args: list[str], cwd: Path) -> str:
+    completed = subprocess.run(
+        [git_executable(), *args],
+        cwd=cwd,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        check=False,
+    )
+    assert completed.returncode == 0, completed.stdout
+    return completed.stdout.strip()
+
+
 def test_golden_path_api_evidence_loop(client: TestClient, tmp_path: Path) -> None:
+    source = tmp_path / "source"
+    source.mkdir()
+    git(["init", "-b", "main"], cwd=source)
+    git(["config", "user.email", "golden@example.com"], cwd=source)
+    git(["config", "user.name", "Golden Path"], cwd=source)
+    (source / "README.md").write_text("# AI Survival Mini\n", encoding="utf-8")
+    git(["add", "README.md"], cwd=source)
+    git(["commit", "-m", "Initial"], cwd=source)
+    remote = tmp_path / "ai-survival-mini.git"
+    git(["clone", "--bare", str(source), str(remote)], cwd=tmp_path)
+    workspace = tmp_path / "ai-survival-mini-workspace"
+    git(["clone", str(remote), str(workspace)], cwd=tmp_path)
+    git(["config", "user.email", "golden@example.com"], cwd=workspace)
+    git(["config", "user.name", "Golden Path"], cwd=workspace)
+
     machine = client.put(
         "/registry/machines/test_runner_12400_3060",
         json={
@@ -77,8 +107,8 @@ def test_golden_path_api_evidence_loop(client: TestClient, tmp_path: Path) -> No
             "name": "AI Survival Mini",
             "description": "Pipeline validation game.",
             "engine": "pygame",
-            "repo_url": str(tmp_path / "ai-survival-mini.git"),
-            "workspace_path": str(tmp_path / "ai-survival-mini-workspace"),
+            "repo_url": str(remote),
+            "workspace_path": str(workspace),
             "base_branch": "main",
         },
     ).json()
@@ -114,6 +144,18 @@ def test_golden_path_api_evidence_loop(client: TestClient, tmp_path: Path) -> No
     assert package["project"]["id"] == project["id"]
     assert package["task"]["branch"] == "worker/player-movement-stub"
 
+    base_commit = leased.json()["base_commit"]
+    git(["checkout", "-B", "worker/player-movement-stub", base_commit], cwd=workspace)
+    (workspace / "src").mkdir()
+    (workspace / "src" / "main.py").write_text("print('player movement stub')\n", encoding="utf-8")
+    report_path = workspace / ".game-company" / "artifacts" / "task-1" / "run-smoke"
+    report_path.mkdir(parents=True)
+    (report_path / "test-runner-report.json").write_text('{"status":"success"}\n', encoding="utf-8")
+    changed_files = ["src/main.py", ".game-company/artifacts/task-1/run-smoke/test-runner-report.json"]
+    git(["add", *changed_files], cwd=workspace)
+    git(["commit", "-m", "Add player movement stub evidence"], cwd=workspace)
+    head_commit = git(["rev-parse", "HEAD"], cwd=workspace)
+
     report = {
         "status": "success",
         "estimated_minutes": 15,
@@ -121,10 +163,12 @@ def test_golden_path_api_evidence_loop(client: TestClient, tmp_path: Path) -> No
         "productive_minutes": 11,
         "error_minutes": 1,
         "retry_count": 0,
-        "files_changed": ["src/main.py", ".game-company/artifacts/task-1/run-smoke/test-runner-report.json"],
+        "files_changed": changed_files,
+        "changed_files": changed_files,
         "tests": ["python -m pytest", "test-runner-report: .game-company/artifacts/task-1/run-smoke/test-runner-report.json"],
         "summary": "Player movement stub and smoke evidence are ready for Owner review.",
         "issues": "",
+        "head_commit": head_commit,
     }
     completed = client.post(f"/workers/workspace-1/tasks/{task['id']}/report", json=report)
     assert completed.status_code == 200

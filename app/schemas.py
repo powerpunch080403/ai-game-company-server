@@ -115,6 +115,8 @@ class WorkerReportCreate(BaseModel):
     summary: str = ""
     issues: str = ""
     changed_files: list[str] | None = None
+    head_commit: str | None = None
+
 
 
 class OwnerRunCreate(BaseModel):
@@ -306,7 +308,10 @@ class MergeCandidateDryRunRead(BaseModel):
     reasons: list[str] = []
     branch_name: str | None = None
     base_commit: str | None = None
+    head_commit: str | None = None
     task_status: str | None = None
+    changed_files: list[str] | None = None
+
 
 
 class MergeCandidateExecuteRead(BaseModel):

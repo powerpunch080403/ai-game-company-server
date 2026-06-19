@@ -154,7 +154,12 @@ def run_workspace_worker(args: argparse.Namespace) -> int:
     write_task_package(run_dir, package)
 
     repo_url, workspace, base_branch = resolve_git_settings(args, package)
-    branch_info = prepare_branch(package, repo_url, workspace, base_branch)
+
+    # 1. Ensure the repo is cloned/prepared first
+    from app.git_workspace import ensure_repo
+    ensure_repo(repo_url, workspace)
+
+    # 2. Check for unexpected dirty state before branch preparation
     before_files = git_status_files(workspace)
     if before_files and not args.allow_dirty:
         report = build_workspace_report(
@@ -166,32 +171,74 @@ def run_workspace_worker(args: argparse.Namespace) -> int:
             "Workspace was dirty before running the task.",
             "Use --allow-dirty only for manual recovery.",
         )
-    else:
-        return_code, output = run_workspace_command(args.command, workspace, package, run_dir)
-        (run_dir / "command.log").write_text(output, encoding="utf-8")
-        files_changed = git_status_files(workspace)
-        commit_hash = None
-        if return_code == 0 and files_changed and not args.no_commit:
-            commit_hash = commit_changes(workspace, task, files_changed)
-        pushed = False
-        if return_code == 0 and args.push:
-            push_branch(workspace, branch_info["branch"])
-            pushed = True
-        status = "success" if return_code == 0 else "failed"
-        summary = f"Workspace command finished with exit code {return_code}."
-        if commit_hash:
-            summary += f" Commit: {commit_hash}"
-        if pushed:
-            summary += f" Pushed: {branch_info['branch']}"
-        report = build_workspace_report(
-            package,
-            status,
-            started_at,
-            files_changed,
-            [args.command],
-            summary,
-            "" if return_code == 0 else output[-4000:],
+        (run_dir / "workspace_report.json").write_text(
+            json.dumps(report, ensure_ascii=False, indent=2),
+            encoding="utf-8",
         )
+        if (should_report or args.report) and not args.no_report:
+            request_json(
+                "POST",
+                f"{args.server}/workers/{args.worker_id}/tasks/{task['id']}/report",
+                json=report,
+            )
+        return 1
+
+    # 3. Prepare the branch
+    branch_info = prepare_branch(package, repo_url, workspace, base_branch)
+    if branch_info["branch"] != task["branch"]:
+        raise RuntimeError(f"Checked out branch {branch_info['branch']} does not match assigned branch {task['branch']}")
+
+    # 4. Perform edits
+    return_code, output = run_workspace_command(args.command, workspace, package, run_dir)
+    (run_dir / "command.log").write_text(output, encoding="utf-8")
+
+    files_changed = git_status_files(workspace)
+
+    # 5. Verify changed files are within write scope
+    from app.repository import validate_changed_files_scope
+    write_scope = task.get("write_scope")
+    forbidden_scope = task.get("forbidden_scope")
+    is_valid_scope, violated = validate_changed_files_scope(files_changed, write_scope, forbidden_scope)
+
+    status = "success" if return_code == 0 and is_valid_scope else "failed"
+
+    commit_hash = None
+    if return_code == 0 and is_valid_scope and files_changed and not args.no_commit:
+        commit_hash = commit_changes(workspace, task, files_changed)
+    else:
+        try:
+            commit_hash = run_git(["rev-parse", "HEAD"], cwd=workspace)
+        except Exception:
+            commit_hash = None
+
+    # 6. For a Git-backed code task, success requires a commit was produced (meaning files_changed is not empty)
+    is_git_backed = (task.get("role") == "code_worker") or bool(repo_url and workspace)
+    if is_git_backed and task.get("role") == "code_worker":
+        if status == "success" and not files_changed:
+            status = "failed"
+            output += "\nError: No changes were made, so no commit was produced."
+
+    pushed = False
+    if status == "success" and args.push:
+        push_branch(workspace, branch_info["branch"])
+        pushed = True
+
+    summary = f"Workspace command finished with exit code {return_code}."
+    if commit_hash:
+        summary += f" Commit: {commit_hash}"
+    if pushed:
+        summary += f" Pushed: {branch_info['branch']}"
+
+    report = build_workspace_report(
+        package,
+        status,
+        started_at,
+        files_changed,
+        [args.command],
+        summary,
+        "" if return_code == 0 and is_valid_scope else output[-4000:],
+    )
+    report["head_commit"] = commit_hash
 
     (run_dir / "workspace_report.json").write_text(
         json.dumps(report, ensure_ascii=False, indent=2),
@@ -210,6 +257,7 @@ def run_workspace_worker(args: argparse.Namespace) -> int:
         )
         print(f"Reported task {task['id']} as {report['status']}.")
     return 0
+
 
 
 def main() -> int:

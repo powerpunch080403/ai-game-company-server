@@ -1174,6 +1174,7 @@ def test_owner_task_merge_api_reviews_and_merges_successful_task(client: TestCli
     prepare_branch(package, str(remote), workspace, "main")
     (workspace / "notes.txt").write_text("merged by api\n", encoding="utf-8")
     commit_changes(workspace, package["task"], ["notes.txt"])
+    head_commit = run_git(["rev-parse", "HEAD"], cwd=workspace)
     push_branch(workspace, "worker/merge-api-notes")
     claimed = client.post(f"/workers/code-1/tasks/{task['id']}/claim", json={"lease_minutes": 30})
     assert claimed.status_code == 200
@@ -1188,6 +1189,7 @@ def test_owner_task_merge_api_reviews_and_merges_successful_task(client: TestCli
         "tests": ["manual"],
         "summary": "Ready to merge.",
         "issues": "",
+        "head_commit": head_commit,
     }
     assert client.post(f"/workers/code-1/tasks/{task['id']}/report", json=report).status_code == 200
 
@@ -1290,6 +1292,36 @@ def _report_payload(status: str = "success") -> dict:
     }
 
 
+def _git_backed_report_payload(
+    client: TestClient,
+    task_id: int,
+    workspace: Path,
+    changed_files: list[str] | None = None,
+    *,
+    status: str = "success",
+) -> dict:
+    changed_files = changed_files or []
+    task = client.get(f"/tasks/{task_id}").json()
+    base_commit = task["base_commit"]
+    branch = task["branch"]
+    git(["checkout", "-B", branch, base_commit], cwd=workspace)
+    for relative in changed_files:
+        path = workspace / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(f"updated by task {task_id}\n", encoding="utf-8")
+    if changed_files:
+        git(["add", *changed_files], cwd=workspace)
+        git(["commit", "-m", f"Task {task_id} result"], cwd=workspace)
+    else:
+        git(["commit", "--allow-empty", "-m", f"Task {task_id} result"], cwd=workspace)
+    head_commit = git(["rev-parse", "HEAD"], cwd=workspace)
+    report = _report_payload(status)
+    report["files_changed"] = changed_files
+    report["changed_files"] = changed_files
+    report["head_commit"] = head_commit
+    return report
+
+
 def _make_project_with_repo(client: TestClient, source: Path, remote: Path) -> tuple[int, int]:
     """Create project -> epic -> sub_epic and return (project_id, sub_epic_id)."""
     project = client.post("/projects", json={
@@ -1379,9 +1411,10 @@ def test_stale_base_detected_on_complete(client: TestClient, tmp_path: Path) -> 
     git(["commit", "-m", "Advance main"], cwd=source)
 
     # Report success → should be downgraded to needs_rebase
+    report = _git_backed_report_payload(client, task_id, source)
     reported = client.post(
         f"/workers/stale-worker/tasks/{task_id}/report",
-        json=_report_payload("success"),
+        json=report,
     ).json()
     assert reported["status"] == "needs_rebase"
 
@@ -1414,9 +1447,10 @@ def test_no_stale_base_when_unchanged(client: TestClient, tmp_path: Path) -> Non
     assert leased.get("base_commit") is not None
 
     # Do NOT advance main — report success immediately
+    report = _git_backed_report_payload(client, task_id, source)
     reported = client.post(
         f"/workers/fresh-worker/tasks/{task_id}/report",
-        json=_report_payload("success"),
+        json=report,
     ).json()
     # base_commit unchanged → status remains success
     assert reported["status"] == "success"
@@ -1610,8 +1644,8 @@ def _make_dummy_project_sub_epic(client: TestClient) -> int:
     project = client.post("/projects", json={
         "name": "Lock Test Project",
         "engine": "undecided",
-        "repo_url": "dummy_repo",
-        "workspace_path": "dummy_workspace",
+        "repo_url": "",
+        "workspace_path": "",
         "base_branch": "main",
     }).json()
     epic = client.post(f"/projects/{project['id']}/epics", json={
@@ -2075,9 +2109,10 @@ def test_merge_candidate_no_creation_on_needs_rebase(client: TestClient, tmp_pat
     git(["commit", "-m", "Advance main"], cwd=source)
 
     # Report success -> status becomes needs_rebase
+    report = _git_backed_report_payload(client, task["id"], source)
     completed = client.post(
         f"/workers/worker-rebase/tasks/{task['id']}/report",
-        json=_report_payload("success"),
+        json=report,
     ).json()
     assert completed["status"] == "needs_rebase"
 
@@ -2388,7 +2423,7 @@ def test_merge_candidate_dry_run_checks(client: TestClient, tmp_path: Path) -> N
     assert leased["base_commit"] is not None
 
     # Report completion (succeeds, creates queued candidate)
-    report = _report_payload("success")
+    report = _git_backed_report_payload(client, task["id"], source)
     completed = client.post(f"/workers/worker-dr/tasks/{task['id']}/report", json=report).json()
     assert completed["status"] == "success"
 
@@ -2483,7 +2518,7 @@ def test_dry_run_stale_base(client: TestClient, tmp_path: Path) -> None:
     assert leased["base_commit"] is not None
 
     # Report completion
-    report = _report_payload("success")
+    report = _git_backed_report_payload(client, task["id"], source)
     client.post(f"/workers/worker-staledr/tasks/{task['id']}/report", json=report).json()
 
     # Get candidate ID
@@ -2494,6 +2529,7 @@ def test_dry_run_stale_base(client: TestClient, tmp_path: Path) -> None:
     client.post(f"/merge-candidates/{candidate_id}/approve")
 
     # Advance main in the source repo
+    git(["checkout", "main"], cwd=source)
     (source / "STALE.md").write_text("stale\n", encoding="utf-8")
     git(["add", "STALE.md"], cwd=source)
     git(["commit", "-m", "Advance main"], cwd=source)
@@ -2527,7 +2563,7 @@ def test_merge_candidate_execution_flow(client: TestClient, tmp_path: Path) -> N
     assert leased["base_commit"] is not None
 
     # Report completion (succeeds, creates queued candidate)
-    report = _report_payload("success")
+    report = _git_backed_report_payload(client, task["id"], source)
     completed = client.post(f"/workers/worker-ex/tasks/{task['id']}/report", json=report).json()
     assert completed["status"] == "success"
 
@@ -2544,17 +2580,16 @@ def test_merge_candidate_execution_flow(client: TestClient, tmp_path: Path) -> N
     # Approve the candidate
     client.post(f"/merge-candidates/{candidate_id}/approve")
 
-    # E. execute with missing branch returns 409 reason missing_branch
+    # E. execute with missing branch returns 409 reason source_branch_missing
+    repo = app.dependency_overrides[get_repo]()
+    repo.conn.execute("UPDATE merge_candidates SET branch_name = 'worker/missing-branch' WHERE id = ?", (candidate_id,))
+    repo.conn.commit()
     exec_missing_branch_res = client.post(f"/merge-candidates/{candidate_id}/execute")
     assert exec_missing_branch_res.status_code == 409
-    assert "missing_branch" in exec_missing_branch_res.json()["detail"]["reasons"]
+    assert "source_branch_missing" in exec_missing_branch_res.json()["detail"]["reasons"]
+    repo.conn.execute("UPDATE merge_candidates SET branch_name = ? WHERE id = ?", (task["branch"], candidate_id))
+    repo.conn.commit()
 
-    # Create the branch in local git workspace and commit a file
-    git(["checkout", "-b", "worker/exec-branch"], cwd=source)
-    (source / "CODE.md").write_text("code contents\n", encoding="utf-8")
-    git(["add", "CODE.md"], cwd=source)
-    git(["commit", "-m", "Commit on worker branch"], cwd=source)
-    # Go back to main
     git(["checkout", "main"], cwd=source)
 
     # D. execute with dirty workspace returns 409 reason dirty_workspace
@@ -2612,7 +2647,8 @@ def test_merge_candidate_execution_flow(client: TestClient, tmp_path: Path) -> N
 
     # Lease and report success
     client.post("/workers/worker-ex2/lease", json={"role": "code_worker", "lease_minutes": 30}).json()
-    client.post(f"/workers/worker-ex2/tasks/{task2['id']}/report", json=_report_payload("success")).json()
+    report2 = _git_backed_report_payload(client, task2["id"], source)
+    client.post(f"/workers/worker-ex2/tasks/{task2['id']}/report", json=report2).json()
     
     candidates2 = client.get(f"/projects/{proj_id}/merge-candidates").json()
     queued2 = [c for c in candidates2 if c["status"] == "queued"]
@@ -2658,8 +2694,17 @@ def test_merge_candidate_conflict_aborts(client: TestClient, tmp_path: Path) -> 
     repo.conn.execute("UPDATE tasks SET base_commit = ? WHERE id = ?", (common_base, task["id"]))
     repo.conn.commit()
 
+    git(["checkout", "-B", "worker/conflict-branch", common_base], cwd=source)
+    (source / "conflict.txt").write_text("worker edit\n", encoding="utf-8")
+    git(["add", "conflict.txt"], cwd=source)
+    git(["commit", "-m", "Worker conflict commit"], cwd=source)
+    head_commit = git(["rev-parse", "HEAD"], cwd=source)
+
     # Report completion (succeeds, creates queued candidate)
     report = _report_payload("success")
+    report["changed_files"] = ["conflict.txt"]
+    report["files_changed"] = ["conflict.txt"]
+    report["head_commit"] = head_commit
     completed = client.post(f"/workers/worker-cf/tasks/{task['id']}/report", json=report).json()
     assert completed["status"] == "success"
 
@@ -2669,33 +2714,21 @@ def test_merge_candidate_conflict_aborts(client: TestClient, tmp_path: Path) -> 
     repo.conn.execute("UPDATE merge_candidates SET base_commit = ? WHERE id = ?", (common_base, candidate_id))
     repo.conn.commit()
 
-    # Create worker/conflict-branch from common_base and commit conflicts
-    git(["checkout", "-b", "worker/conflict-branch", common_base], cwd=source)
-    (source / "conflict.txt").write_text("worker edit\n", encoding="utf-8")
-    git(["add", "conflict.txt"], cwd=source)
-    git(["commit", "-m", "Worker conflict commit"], cwd=source)
-
     # Go back to main and commit conflict
     git(["checkout", "main"], cwd=source)
     (source / "conflict.txt").write_text("main edit\n", encoding="utf-8")
     git(["add", "conflict.txt"], cwd=source)
     git(["commit", "-m", "Main conflict commit"], cwd=source)
 
-    # Now the main branch HEAD has advanced to a new commit.
-    # To prevent stale_base failure, we update candidate base_commit to the new HEAD of main
-    new_main_head = git(["rev-parse", "HEAD"], cwd=source).strip()
-    repo.conn.execute("UPDATE merge_candidates SET base_commit = ? WHERE id = ?", (new_main_head, candidate_id))
-    repo.conn.commit()
-
     # Approve candidate
     client.post(f"/merge-candidates/{candidate_id}/approve")
 
-    # Attempt to execute -> should fail with merge_failed
+    # Attempt to execute -> stale base is detected before an unsafe merge attempt
     exec_conflict_res = client.post(f"/merge-candidates/{candidate_id}/execute")
     assert exec_conflict_res.status_code == 409
     assert "reasons" in exec_conflict_res.json()["detail"]
     reasons = exec_conflict_res.json()["detail"]["reasons"]
-    assert any("merge_failed" in r for r in reasons)
+    assert "stale_base" in reasons
 
     # Verify candidate status is still approved
     candidates_after = client.get(f"/projects/{proj_id}/merge-candidates").json()
@@ -3417,18 +3450,8 @@ def test_from_plan_lifecycle_reaches_success_and_merge_candidate(client: TestCli
     locks_after = repo.conn.execute("SELECT * FROM task_locks WHERE task_id = ? AND status = 'active'", (task_id,)).fetchall()
     assert len(locks_after) > 0
 
-    (source / "src" / "player.py").write_text("class Player:\n    def move(self):\n        print('moving')\n", encoding="utf-8")
-
-    report = {
-        "status": "success",
-        "estimated_minutes": 15,
-        "actual_minutes": 10,
-        "productive_minutes": 10,
-        "error_minutes": 0,
-        "retry_count": 0,
-        "summary": "Updated player movement logic.",
-        "changed_files": ["src/player.py"]
-    }
+    report = _git_backed_report_payload(client, task_id, source, ["src/player.py"])
+    report["summary"] = "Updated player movement logic."
     completed = client.post(f"/workers/worker-node-1/tasks/{task_id}/report", json=report)
     assert completed.status_code == 200
     assert completed.json()["status"] == "success"
@@ -3484,16 +3507,8 @@ def test_from_plan_lifecycle_scope_violation_does_not_create_merge_candidate(cli
 
     client.post("/workers/worker-node-2/lease", json={"role": "code_worker", "lease_minutes": 30})
 
-    report = {
-        "status": "success",
-        "estimated_minutes": 15,
-        "actual_minutes": 10,
-        "productive_minutes": 10,
-        "error_minutes": 0,
-        "retry_count": 0,
-        "summary": "Updated physics but modified config.",
-        "changed_files": ["config.json"]
-    }
+    report = _git_backed_report_payload(client, task_id, source, ["config.json"])
+    report["summary"] = "Updated physics but modified config."
     completed = client.post(f"/workers/worker-node-2/tasks/{task_id}/report", json=report)
     assert completed.status_code == 200
     assert completed.json()["status"] == "scope_violation"
@@ -4119,7 +4134,7 @@ def test_from_plan_create_thread_failure_does_not_create_fake_reference(client: 
         assert response.status_code == 503
         assert "task_created_but_thread_creation_failed" in response.json()["detail"]
         
-        repo = deps.get_repo()
+        repo = app.dependency_overrides[get_repo]()
         refs = repo.conn.execute("SELECT * FROM task_thread_references").fetchall()
         assert len(refs) == 0
     finally:
@@ -4535,12 +4550,5 @@ def test_format_task_report_thread_message_is_deterministic() -> None:
     assert "Changed files:\n- src/main.py\n- tests/test_main.py" in msg
     assert "Merge candidate:\nqueued" in msg
     assert "Notes:\nNone" in msg
-
-
-
-
-
-
-
 
 

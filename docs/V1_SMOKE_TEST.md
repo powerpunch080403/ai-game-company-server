@@ -309,6 +309,20 @@ Verify:
 
 Do not execute final merge.
 
+### Worker Git Result Integrity & Merge Candidate Validations
+
+For Git-backed coding tasks, a successful Worker result requires a committed result and recorded `head_commit`. The following safety rules are enforced:
+1. **Workspace Cleanliness**: The Workspace Worker checks for uncommitted changes before branch preparation.
+2. **Branch Reset**: The Workspace Worker creates or resets the assigned branch exactly from the Task's recorded `base_commit`.
+3. **Commit Requirement**: A successful report for a Git-backed code task must contain a committed `head_commit`. If no commit was produced, the report is rejected/failed.
+4. **Integrity Validation**: The server validates actual Git objects at report-time, dry-run, and final merge execution:
+   - Branch existence and matching branch tip (`rev-parse(task branch) == head_commit`).
+   - Ancestry/descendant check (`merge-base --is-ancestor(base_commit, head_commit)`).
+   - Changed files derived directly from Git (`git diff --name-only -z base_commit..head_commit`) matched against write scope and Worker reports.
+5. **Auditing**: Invalid success reports are stored in `worker_reports` for audit (including `head_commit`), task locks are released, task status is set to `failed` for recovery, and a HTTP 409 conflict is returned.
+6. **Parity**: Repository-level merge execution performs the same validation re-run immediately before merging.
+
+
 Smoke Test B: Scope Violation Path
 
 B1. Create another from-plan task

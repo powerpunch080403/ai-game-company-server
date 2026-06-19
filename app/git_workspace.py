@@ -75,8 +75,26 @@ def prepare_branch(package: dict[str, Any], repo_url: str, workspace: Path, base
     validate_worker_branch(branch)
     ensure_repo(repo_url, workspace)
     run_git(["fetch", "origin"], cwd=workspace)
-    run_git(["checkout", base_branch], cwd=workspace)
-    run_git(["pull", "--ff-only", "origin", base_branch], cwd=workspace)
+
+    base_commit = task.get("base_commit")
+    if base_commit:
+        try:
+            run_git(["rev-parse", "--verify", base_commit], cwd=workspace)
+            start_point = base_commit
+        except GitWorkspaceError:
+            run_git(["fetch", "origin"], cwd=workspace)
+            try:
+                run_git(["rev-parse", "--verify", base_commit], cwd=workspace)
+                start_point = base_commit
+            except GitWorkspaceError:
+                run_git(["checkout", base_branch], cwd=workspace)
+                run_git(["pull", "--ff-only", "origin", base_branch], cwd=workspace)
+                start_point = base_branch
+    else:
+        run_git(["checkout", base_branch], cwd=workspace)
+        run_git(["pull", "--ff-only", "origin", base_branch], cwd=workspace)
+        start_point = base_branch
+
     existing = subprocess.run(
         [git_executable(), "rev-parse", "--verify", branch],
         cwd=workspace,
@@ -88,7 +106,8 @@ def prepare_branch(package: dict[str, Any], repo_url: str, workspace: Path, base
     if existing.returncode == 0:
         run_git(["checkout", branch], cwd=workspace)
     else:
-        run_git(["checkout", "-b", branch], cwd=workspace)
+        run_git(["checkout", "-b", branch, start_point], cwd=workspace)
+
     current_branch = run_git(["branch", "--show-current"], cwd=workspace)
     return {
         "workspace": str(workspace),
@@ -96,6 +115,7 @@ def prepare_branch(package: dict[str, Any], repo_url: str, workspace: Path, base
         "branch": current_branch,
         "commit": run_git(["rev-parse", "HEAD"], cwd=workspace),
     }
+
 
 
 def load_package(args: argparse.Namespace) -> dict[str, Any]:
