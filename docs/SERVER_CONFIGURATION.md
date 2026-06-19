@@ -484,12 +484,24 @@ Required v1 security baseline:
 - Keep Git credentials or deploy keys outside the database.
 - Restrict remote access to Tailscale and SSH users.
 
+### Node Identity and Modes
+
+- `GAME_COMPANY_NODE_ID`: Unique identity of this control-server node.
+- `GAME_COMPANY_NODE_MODE`: Use `authority` for the central project control server.
+
+### Discord Task-Thread Configuration
+
+- `DISCORD_BOT_TOKEN`: Discord Bot API authentication token.
+- `GAME_COMPANY_DISCORD_TASK_CHANNEL_ID`: Discord text channel where task threads are created.
+
 Recommended `.env` skeleton:
 
 ```env
 GAME_COMPANY_DB_PATH=<HOME_DIR>/ai-game-company-server/data/game_company.sqlite3
 GAME_COMPANY_HOST=0.0.0.0
 GAME_COMPANY_PORT=8080
+GAME_COMPANY_NODE_ID=
+GAME_COMPANY_NODE_MODE=authority
 GAME_COMPANY_API_TOKEN=replace-with-generated-admin-token
 GAME_COMPANY_OWNER_TOKEN=replace-with-generated-owner-token
 GAME_COMPANY_WORKER_TOKEN=replace-with-generated-worker-token
@@ -499,6 +511,8 @@ GAME_COMPANY_ALLOWED_COMMAND_PREFIXES=python -m pytest,npm test
 GAME_COMPANY_BACKUP_DIR=<HOME_DIR>/ai-game-company-server/backups
 GAME_COMPANY_ARTIFACT_ROOT=<HOME_DIR>/ai-game-company-server/artifacts
 GAME_COMPANY_MAX_ARTIFACT_UPLOAD_BYTES=104857600
+DISCORD_BOT_TOKEN=
+GAME_COMPANY_DISCORD_TASK_CHANNEL_ID=
 
 GAME_COMPANY_OWNER_COMMAND=
 GAME_COMPANY_OWNER_TIMEOUT_SECONDS=900
