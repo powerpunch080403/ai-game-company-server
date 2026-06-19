@@ -98,8 +98,10 @@ CREATE TABLE IF NOT EXISTS worker_reports (
     tests_json TEXT NOT NULL,
     summary TEXT NOT NULL,
     issues TEXT NOT NULL,
-    created_at TEXT NOT NULL
+    created_at TEXT NOT NULL,
+    head_commit TEXT
 );
+
 
 CREATE TABLE IF NOT EXISTS task_events (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -322,6 +324,10 @@ TASK_COLUMNS = {
     "forbidden_scope_json": "TEXT",
 }
 
+WORKER_REPORT_COLUMNS = {
+    "head_commit": "TEXT",
+}
+
 
 def connect(db_path: Path) -> sqlite3.Connection:
     db_path.parent.mkdir(parents=True, exist_ok=True)
@@ -352,7 +358,15 @@ def migrate_db(conn: sqlite3.Connection) -> None:
     for name, definition in TASK_COLUMNS.items():
         if name not in task_columns:
             conn.execute(f"ALTER TABLE tasks ADD COLUMN {name} {definition}")
+    worker_report_columns = {
+        row["name"]
+        for row in conn.execute("PRAGMA table_info(worker_reports)").fetchall()
+    }
+    for name, definition in WORKER_REPORT_COLUMNS.items():
+        if name not in worker_report_columns:
+            conn.execute(f"ALTER TABLE worker_reports ADD COLUMN {name} {definition}")
     conn.commit()
+
 
 
 @contextmanager

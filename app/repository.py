@@ -102,7 +102,7 @@ def get_current_base_commit(repo_path: str, default_branch: str = "main") -> str
     """Return the current HEAD commit of `default_branch` in `repo_path`.
 
     Returns None if the path is missing, not a git repo, or git fails.
-    Never raises — failures are silently swallowed to preserve normal task flow.
+    Never raises; failures are silently swallowed to preserve normal task flow.
     """
     try:
         from pathlib import Path as _Path
@@ -1336,13 +1336,13 @@ class Repository:
                 """,
                 (role, timestamp),
             ).fetchall()
-            
+
             eligible_task = None
             for row in rows:
                 candidate = row_to_dict(row) or {}
                 candidate_id = candidate["id"]
                 candidate_write_scope = candidate.get("write_scope")
-                
+
                 # Check project linkage and conflict
                 project = self._project_for_task(candidate_id)
                 if project and candidate_write_scope:
@@ -1350,10 +1350,10 @@ class Repository:
                         continue
                 eligible_task = candidate
                 break
-                
+
             if eligible_task is None:
                 return None
-                
+
             task_id = int(eligible_task["id"])
             original_branch = eligible_task["branch"]
             from app.config import load_settings
@@ -1498,23 +1498,188 @@ class Repository:
             self._touch_worker(worker_id, role=task["role"], status="busy")
         return self.get_task(task_id)
 
+    def _is_task_git_backed(self, task: dict[str, Any], project: dict[str, Any] | None) -> bool:
+        if project is None:
+            return False
+        return bool(project.get("repo_url") or project.get("workspace_path"))
+
+
     def complete_task(self, task_id: int, worker_id: str, payload: WorkerReportCreate) -> dict[str, Any]:
         task = self.get_task(task_id)
         if task["status"] != "running" or task["leased_by"] != worker_id:
             raise ValueError("task must be leased by the reporting worker")
         timestamp = now_iso()
+        project = self._project_for_task(task_id)
 
-        # Stale-base detection: if worker reports success but main has moved, mark needs_rebase
+        is_git_backed = self._is_task_git_backed(task, project)
+
+        integrity_error = None
+        git_derived_changed_files = None
+
+        if is_git_backed and payload.status == "success":
+            if not project or not project.get("workspace_path") or not project.get("repo_url"):
+                integrity_error = "workspace_unavailable"
+            elif not task.get("branch"):
+                integrity_error = "missing_branch_name"
+            elif not task.get("base_commit"):
+                integrity_error = "missing_base_commit"
+            elif not payload.head_commit:
+                integrity_error = "missing_head_commit"
+            else:
+                ws = project["workspace_path"]
+                from pathlib import Path as _Path
+                ws_path = _Path(ws)
+                if not ws_path.exists() or not (ws_path / ".git").exists():
+                    integrity_error = "workspace_unavailable"
+                else:
+                    branch_name = task["branch"]
+                    base_commit = task["base_commit"]
+                    head_commit = payload.head_commit
+
+                    res_branch = subprocess.run(
+                        ["git", "show-ref", f"refs/heads/{branch_name}"],
+                        capture_output=True,
+                        text=True,
+                        cwd=ws,
+                        timeout=5,
+                    )
+                    if res_branch.returncode != 0:
+                        integrity_error = "source_branch_missing"
+                    else:
+                        res_commit = subprocess.run(
+                            ["git", "cat-file", "-t", head_commit],
+                            capture_output=True,
+                            text=True,
+                            cwd=ws,
+                            timeout=5,
+                        )
+                        if res_commit.returncode != 0 or res_commit.stdout.strip() != "commit":
+                            integrity_error = "source_commit_missing"
+                        else:
+                            res_tip = subprocess.run(
+                                ["git", "rev-parse", f"refs/heads/{branch_name}"],
+                                capture_output=True,
+                                text=True,
+                                cwd=ws,
+                                timeout=5,
+                            )
+                            if res_tip.returncode != 0 or res_tip.stdout.strip() != head_commit:
+                                integrity_error = "source_branch_head_mismatch"
+                            else:
+                                res_desc = subprocess.run(
+                                    ["git", "merge-base", "--is-ancestor", base_commit, head_commit],
+                                    cwd=ws,
+                                    timeout=5,
+                                )
+                                if res_desc.returncode != 0:
+                                    integrity_error = "source_not_descendant_of_base"
+                                else:
+                                    res_status = subprocess.run(
+                                        ["git", "status", "--porcelain"],
+                                        capture_output=True,
+                                        text=True,
+                                        cwd=ws,
+                                        timeout=5,
+                                    )
+                                    if res_status.returncode != 0:
+                                        integrity_error = "workspace_unavailable"
+                                    elif res_status.stdout.strip():
+                                        integrity_error = "dirty_workspace"
+                                    else:
+                                        res_diff = subprocess.run(
+                                            ["git", "diff", "--name-only", "-z", base_commit, head_commit],
+                                            capture_output=True,
+                                            text=True,
+                                            cwd=ws,
+                                            timeout=5,
+                                        )
+                                        if res_diff.returncode != 0:
+                                            integrity_error = "workspace_unavailable"
+                                        else:
+                                            diff_files = [f.replace("\\", "/").strip() for f in res_diff.stdout.split("\x00") if f.strip()]
+                                            git_derived_changed_files = diff_files
+
+                                            reported_files = payload.changed_files if payload.changed_files is not None else payload.files_changed
+                                            norm_reported = [f.replace("\\", "/").strip() for f in reported_files]
+
+                                            if set(git_derived_changed_files) != set(norm_reported):
+                                                integrity_error = "changed_files_mismatch"
+
+        if payload.status == "success" and is_git_backed and integrity_error:
+            with transaction(self.conn):
+                self.conn.execute(
+                    """
+                    INSERT INTO worker_reports (
+                        task_id, worker_id, status, estimated_minutes, actual_minutes,
+                        productive_minutes, error_minutes, retry_count, files_changed_json,
+                        tests_json, summary, issues, created_at, head_commit
+                    )
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        task_id,
+                        worker_id,
+                        payload.status,
+                        payload.estimated_minutes,
+                        payload.actual_minutes,
+                        payload.productive_minutes,
+                        payload.error_minutes,
+                        payload.retry_count,
+                        json.dumps(payload.changed_files if payload.changed_files is not None else payload.files_changed),
+                        json.dumps(payload.tests),
+                        payload.summary,
+                        payload.issues,
+                        timestamp,
+                        payload.head_commit,
+                    ),
+                )
+                self._release_task_locks(task_id, timestamp)
+                self.conn.execute(
+                    """
+                    UPDATE tasks
+                    SET status = 'failed',
+                        retry_count = ?,
+                        leased_by = NULL,
+                        leased_until = NULL,
+                        updated_at = ?
+                    WHERE id = ?
+                    """,
+                    (payload.retry_count, timestamp, task_id),
+                )
+                self._add_task_event(task_id, "reported", f"{worker_id} reported success (integrity failure: {integrity_error})")
+                self._add_task_event(task_id, "integrity_failure", f"Integrity check failed: {integrity_error}")
+                self._touch_worker(worker_id, role=task["role"], status="online")
+            raise ValueError(integrity_error)
+
         final_status = payload.status
         stale_msg = ""
         scope_violation_msg = ""
         if payload.status == "success":
-            task_base_commit = task.get("base_commit")
-            if task_base_commit:
-                stale_project = self._project_for_task(task_id)
-                if stale_project:
-                    ws = stale_project.get("workspace_path") or ""
-                    db = stale_project.get("base_branch") or "main"
+            if is_git_backed and git_derived_changed_files is not None:
+                write_scope = task.get("write_scope")
+                forbidden_scope = task.get("forbidden_scope")
+                is_valid, violated = validate_changed_files_scope(
+                    git_derived_changed_files, write_scope, forbidden_scope
+                )
+                if not is_valid:
+                    final_status = "scope_violation"
+                    scope_violation_msg = f"Scope violation: modified files {violated} outside allowed policy"
+            else:
+                reported_files = payload.changed_files if payload.changed_files is not None else payload.files_changed
+                write_scope = task.get("write_scope")
+                forbidden_scope = task.get("forbidden_scope")
+                is_valid, violated = validate_changed_files_scope(
+                    reported_files, write_scope, forbidden_scope
+                )
+                if not is_valid:
+                    final_status = "scope_violation"
+                    scope_violation_msg = f"Scope violation: modified files {violated} outside allowed policy"
+
+            if final_status == "success":
+                task_base_commit = task.get("base_commit")
+                if task_base_commit and project:
+                    ws = project.get("workspace_path") or ""
+                    db = project.get("base_branch") or "main"
                     if ws:
                         current_commit = get_current_base_commit(ws, db)
                         if current_commit and current_commit != task_base_commit:
@@ -1524,25 +1689,15 @@ class Repository:
                                 f"{current_commit[:12]}; rebase required before merge"
                             )
 
-            if payload.changed_files is not None:
-                write_scope = task.get("write_scope")
-                forbidden_scope = task.get("forbidden_scope")
-                is_valid, violated = validate_changed_files_scope(
-                    payload.changed_files, write_scope, forbidden_scope
-                )
-                if not is_valid:
-                    final_status = "scope_violation"
-                    scope_violation_msg = f"Scope violation: modified files {violated} outside allowed policy"
-
         with transaction(self.conn):
             report_cur = self.conn.execute(
                 """
                 INSERT INTO worker_reports (
                     task_id, worker_id, status, estimated_minutes, actual_minutes,
                     productive_minutes, error_minutes, retry_count, files_changed_json,
-                    tests_json, summary, issues, created_at
+                    tests_json, summary, issues, created_at, head_commit
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     task_id,
@@ -1558,6 +1713,7 @@ class Repository:
                     payload.summary,
                     payload.issues,
                     timestamp,
+                    payload.head_commit,
                 ),
             )
             report_id = report_cur.lastrowid
@@ -1613,7 +1769,6 @@ class Repository:
                 (final_status, payload.retry_count, final_status, timestamp, timestamp, task_id),
             )
             if final_status == "success":
-                project = self._project_for_task(task_id)
                 if project:
                     project_id = project["id"]
                     branch_name = task.get("branch") or None
@@ -1623,7 +1778,7 @@ class Repository:
                             project_id, task_id, branch_name, base_commit, head_commit,
                             status, created_at, updated_at
                         )
-                        VALUES (?, ?, ?, ?, NULL, 'queued', ?, ?)
+                        VALUES (?, ?, ?, ?, ?, 'queued', ?, ?)
                         ON CONFLICT(task_id) DO NOTHING
                         """,
                         (
@@ -1631,6 +1786,7 @@ class Repository:
                             task_id,
                             branch_name,
                             task.get("base_commit"),
+                            payload.head_commit,
                             timestamp,
                             timestamp,
                         ),
@@ -1869,70 +2025,209 @@ class Repository:
             )
         return self.get_merge_candidate(candidate_id)
 
-    def dry_run_merge_candidate(self, candidate_id: int) -> dict[str, Any]:
-        candidate = self.get_merge_candidate(candidate_id)
+    def _check_merge_candidate_integrity(self, candidate: dict[str, Any]) -> dict[str, Any]:
         reasons = []
+        task_id = candidate.get("task_id")
+        task_status = None
+        task = None
 
-        # 1. Check approved status
+        # 1. Approval check
         if candidate.get("status") != "approved":
             reasons.append("not_approved")
 
-        # 2. Check branch name
-        if not candidate.get("branch_name"):
+        # 2. Branch name check
+        branch_name = candidate.get("branch_name")
+        if not branch_name:
             reasons.append("missing_branch_name")
 
-        # 3. Check base commit
-        if not candidate.get("base_commit"):
+        # 3. Base commit check
+        base_commit = candidate.get("base_commit")
+        if not base_commit:
             reasons.append("missing_base_commit")
 
-        # 4. Check linked task
-        task_id = candidate.get("task_id")
-        task_status = None
-        try:
-            task = self.get_task(task_id)
-            task_status = task.get("status")
-            if task_status != "success":
-                reasons.append("task_not_success")
-        except KeyError:
-            reasons.append("missing_task")
+        # 4. Head commit check
+        head_commit = candidate.get("head_commit")
+        if not head_commit:
+            reasons.append("missing_head_commit")
 
-        # 5. Check workspace HEAD for stale_base
-        if candidate.get("base_commit"):
-            project = self._project_for_task(task_id)
-            if project:
-                ws = project.get("workspace_path") or ""
-                db = project.get("base_branch") or "main"
-                if ws:
+        # 5. Task checks
+        if task_id:
+            try:
+                task = self.get_task(task_id)
+                task_status = task.get("status")
+                if task_status != "success":
+                    reasons.append("task_not_success")
+                if task_status == "scope_violation":
+                    reasons.append("scope_violation")
+            except KeyError:
+                reasons.append("task_not_success")
+        else:
+            reasons.append("task_not_success")
+
+        # 6. Workspace checks
+        project = self._project_for_task(task_id) if task_id else None
+
+        is_git_backed = False
+        if task:
+            is_git_backed = self._is_task_git_backed(task, project)
+
+        git_derived_changed_files = None
+
+        if is_git_backed:
+            if not project or not project.get("workspace_path") or not project.get("repo_url"):
+                reasons.append("workspace_unavailable")
+            else:
+                ws = project["workspace_path"]
+                from pathlib import Path as _Path
+                ws_path = _Path(ws)
+                if not ws_path.exists() or not (ws_path / ".git").exists():
+                    reasons.append("workspace_unavailable")
+                else:
+                    # Check dirty status
                     try:
-                        current_commit = get_current_base_commit(ws, db)
-                        if not current_commit:
+                        res_status = subprocess.run(
+                            ["git", "status", "--porcelain"],
+                            capture_output=True,
+                            text=True,
+                            cwd=ws,
+                            timeout=5,
+                        )
+                        if res_status.returncode != 0:
                             reasons.append("workspace_unavailable")
-                        elif current_commit != candidate["base_commit"]:
-                            reasons.append("stale_base")
+                        elif res_status.stdout.strip():
+                            reasons.append("dirty_workspace")
                     except Exception:
                         reasons.append("workspace_unavailable")
-                else:
-                    reasons.append("workspace_unavailable")
-            else:
-                reasons.append("workspace_unavailable")
 
-        ready = (len(reasons) == 0)
+                    # Check base branch HEAD (stale_base check)
+                    db = project.get("base_branch") or "main"
+                    if base_commit:
+                        try:
+                            current_commit = get_current_base_commit(ws, db)
+                            if not current_commit:
+                                reasons.append("workspace_unavailable")
+                            elif current_commit != base_commit:
+                                reasons.append("stale_base")
+                        except Exception:
+                            reasons.append("workspace_unavailable")
 
+                    # Check source branch existence
+                    branch_exists = False
+                    if branch_name:
+                        try:
+                            res_branch = subprocess.run(
+                                ["git", "show-ref", f"refs/heads/{branch_name}"],
+                                capture_output=True,
+                                text=True,
+                                cwd=ws,
+                                timeout=5,
+                            )
+                            if res_branch.returncode == 0:
+                                branch_exists = True
+                            else:
+                                reasons.append("source_branch_missing")
+                        except Exception:
+                            reasons.append("workspace_unavailable")
+
+                    # Check head commit existence
+                    head_commit_exists = False
+                    if head_commit:
+                        try:
+                            res_commit = subprocess.run(
+                                ["git", "cat-file", "-t", head_commit],
+                                capture_output=True,
+                                text=True,
+                                cwd=ws,
+                                timeout=5,
+                            )
+                            if res_commit.returncode == 0 and res_commit.stdout.strip() == "commit":
+                                head_commit_exists = True
+                            else:
+                                reasons.append("source_commit_missing")
+                        except Exception:
+                            reasons.append("workspace_unavailable")
+
+                    # Check branch tip equals head commit
+                    if branch_name and head_commit and branch_exists and head_commit_exists:
+                        try:
+                            res_tip = subprocess.run(
+                                ["git", "rev-parse", f"refs/heads/{branch_name}"],
+                                capture_output=True,
+                                text=True,
+                                cwd=ws,
+                                timeout=5,
+                            )
+                            if res_tip.returncode != 0 or res_tip.stdout.strip() != head_commit:
+                                reasons.append("source_branch_head_mismatch")
+                        except Exception:
+                            reasons.append("workspace_unavailable")
+
+                    # Check head commit descends from base commit
+                    if base_commit and head_commit and head_commit_exists:
+                        try:
+                            res_desc = subprocess.run(
+                                ["git", "merge-base", "--is-ancestor", base_commit, head_commit],
+                                capture_output=True,
+                                cwd=ws,
+                                timeout=5,
+                            )
+                            if res_desc.returncode != 0:
+                                reasons.append("source_not_descendant_of_base")
+                        except Exception:
+                            reasons.append("workspace_unavailable")
+
+                    # Calculate Git-derived changed files and check mismatch
+                    if base_commit and head_commit and head_commit_exists:
+                        try:
+                            res_diff = subprocess.run(
+                                ["git", "diff", "--name-only", "-z", base_commit, head_commit],
+                                capture_output=True,
+                                text=True,
+                                cwd=ws,
+                                timeout=5,
+                            )
+                            if res_diff.returncode == 0:
+                                git_derived_changed_files = [f.replace("\\", "/").strip() for f in res_diff.stdout.split("\x00") if f.strip()]
+                                if task_id:
+                                    reports = self.list_task_reports(task_id)
+                                    if reports:
+                                        reported_files = reports[0].get("files_changed", [])
+                                        norm_reported = [f.replace("\\", "/").strip() for f in reported_files]
+                                        if set(git_derived_changed_files) != set(norm_reported):
+                                            reasons.append("changed_files_mismatch")
+                        except Exception:
+                            pass
+
+        return {
+            "reasons": reasons,
+            "git_derived_changed_files": git_derived_changed_files,
+            "task_status": task_status,
+        }
+
+    def dry_run_merge_candidate(self, candidate_id: int) -> dict[str, Any]:
+        candidate = self.get_merge_candidate(candidate_id)
+        res = self._check_merge_candidate_integrity(candidate)
+        ready = (len(res["reasons"]) == 0)
         return {
             "candidate_id": candidate_id,
             "ready": ready,
             "status": candidate.get("status"),
-            "reasons": reasons,
+            "reasons": res["reasons"],
             "branch_name": candidate.get("branch_name"),
             "base_commit": candidate.get("base_commit"),
-            "task_status": task_status,
+            "head_commit": candidate.get("head_commit"),
+            "task_status": res["task_status"],
+            "changed_files": res["git_derived_changed_files"],
         }
 
     def execute_merge_candidate(self, candidate_id: int) -> dict[str, Any]:
         candidate = self.get_merge_candidate(candidate_id)
         task_id = candidate["task_id"]
 
-        # 1. Get workspace path and base branch
+        res = self._check_merge_candidate_integrity(candidate)
+        if res["reasons"]:
+            raise ValueError(res["reasons"][0])
+
         project = self._project_for_task(task_id)
         if not project:
             raise ValueError("workspace_unavailable")
@@ -1940,53 +2235,9 @@ class Repository:
         db = project.get("base_branch") or "main"
         if not ws:
             raise ValueError("workspace_unavailable")
+        branch_name = candidate.get("branch_name")
 
-        # 2. Safety and readiness checks via local Git
-        try:
-            # Check if working tree is dirty
-            res_status = subprocess.run(
-                ["git", "status", "--porcelain"],
-                capture_output=True,
-                text=True,
-                cwd=ws,
-                timeout=5,
-            )
-            if res_status.returncode != 0:
-                raise ValueError("workspace_unavailable")
-            if res_status.stdout.strip():
-                raise ValueError("dirty_workspace")
-
-            # Check if current HEAD matches candidate.base_commit
-            res_head = subprocess.run(
-                ["git", "rev-parse", "HEAD"],
-                capture_output=True,
-                text=True,
-                cwd=ws,
-                timeout=5,
-            )
-            if res_head.returncode != 0:
-                raise ValueError("workspace_unavailable")
-            current_head = res_head.stdout.strip()
-            if current_head != candidate.get("base_commit"):
-                raise ValueError("stale_base")
-
-            # Check if the candidate branch exists locally
-            branch_name = candidate.get("branch_name")
-            res_branch = subprocess.run(
-                ["git", "show-ref", f"refs/heads/{branch_name}"],
-                capture_output=True,
-                text=True,
-                cwd=ws,
-                timeout=5,
-            )
-            if res_branch.returncode != 0:
-                raise ValueError("missing_branch")
-        except ValueError:
-            raise
-        except Exception:
-            raise ValueError("workspace_unavailable")
-
-        # 3. Perform Git merge: git merge --no-ff --no-edit <branch_name>
+        # Perform Git merge: git merge --no-ff --no-edit <branch_name>
         res_merge = subprocess.run(
             ["git", "merge", "--no-ff", "--no-edit", branch_name],
             capture_output=True,
@@ -2003,12 +2254,11 @@ class Repository:
                 cwd=ws,
                 timeout=5,
             )
-            # Include a short safe error message
             err_msg = res_merge.stderr.strip() or res_merge.stdout.strip() or "unknown error"
             short_err = err_msg.split('\n')[0][:100]
             raise ValueError(f"merge_failed: {short_err}")
 
-        # 4. Merge succeeded, update DB
+        # Merge succeeded, update DB
         timestamp = now_iso()
         with transaction(self.conn):
             self.conn.execute(
@@ -2340,4 +2590,3 @@ class Repository:
             "references": references,
             "truncated": truncated
         }
-
