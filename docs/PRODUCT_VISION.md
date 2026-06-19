@@ -258,9 +258,9 @@ Use server in real personal projects
 The roadmap progresses through developmental phases rather than fixed dates:
 
 ### Phase 0 — Current V1 Acceptance
-* **Goal**: Complete the manual Owner smoke test as defined in [`docs/V1_SMOKE_TEST.md`](file:///c:/Users/user2/.gemini/antigravity/scratch/ai-game-company-server/docs/V1_SMOKE_TEST.md).
-* **Requirements**: Record the smoke test outcome honestly. No official V1.5 work begins until the V1 smoke test PASS result is recorded.
-* *Current status: V1 acceptance result is pending.*
+* **Goal**: Complete the manual Owner smoke test as defined in [`docs/V1_SMOKE_TEST.md`](V1_SMOKE_TEST.md).
+* **Requirements**: Record the smoke test outcome honestly before treating V1 as ready for local/private use.
+* *Current status: PASS. V1 acceptance is recorded in [`docs/V1_SMOKE_TEST.md`](V1_SMOKE_TEST.md).*
 
 ### Phase 1 — Personal Standalone Product
 * **Goals**:

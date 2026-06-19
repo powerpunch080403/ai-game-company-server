@@ -2,7 +2,8 @@
 
 ## Current Status
 
-v1 is usable for controlled Task 1 bootstrap. Golden Path rehearsal has been successfully completed, providing the minimum operational baseline to begin the first portfolio game development.
+v1 acceptance smoke testing has passed. The server is ready for local/private
+use with the first small test game.
 
 The server can already run the core loop:
 
@@ -40,7 +41,9 @@ The server can already run the core loop:
 27. Add Golden Path design and an API-level e2e evidence loop test.
 28. Add `game-pygame-mini` project scaffold with runnable Test Runner preset.
 
-The next priority is the development of the first portfolio game, starting with **Neon Survival Prototype Task 1: Project Bootstrap**. The Golden Path rehearsal has been completed successfully.
+The next priority is the development of the first test game, starting with
+**Neon Survival Prototype Task 1: Project Bootstrap**. The Golden Path
+rehearsal and live CLI smoke checks have been completed successfully.
 
 Detailed target: [FIRST_PORTFOLIO_GAME_PLAN.md](FIRST_PORTFOLIO_GAME_PLAN.md).
 
@@ -63,18 +66,22 @@ Work that can be done locally:
 - CLI UX improvements
 
 ## V1 Acceptance Gate
-- **Status**: Pending Owner smoke test result
+- **Status**: PASS
 - **Required Result**: PASS
-- **Result Location**: To be recorded in the smoke test result log under `README.md` once run.
-- **V1 Status**: Pending smoke test result
+- **Result Location**: [`docs/V1_SMOKE_TEST.md`](V1_SMOKE_TEST.md)
+- **V1 Status**: Complete for local/private v1 use
 - **Reusable Owner smoke test prompt**: [`docs/V1_SMOKE_TEST.md`](V1_SMOKE_TEST.md)
 
-The V1 release is considered complete only after the Owner runs a manual smoke test verifying the E2E workflow and the result is recorded as PASS.
+The V1 release is considered complete for local/private use. The recorded smoke
+result confirms that the practical Owner -> Worker -> Git -> report -> merge
+candidate loop works with live CLI workers.
 
 ## V1.5 Transition
 - **Status**: Next Phase
 - **Focus**: Usability, Discord workflows, owner workflows, memory/indexing, smoke automation.
-- **Trigger**: Starts officially after V1 smoke test PASS. Note that some early V1.5-style infrastructure (like experimental schemas or skeleton endpoints) may already be present in the repository, but the official V1.5 phase starts only after V1 smoke acceptance.
+- **Trigger**: Started after V1 smoke test PASS. Note that some early
+  V1.5-style infrastructure (like experimental schemas or skeleton endpoints)
+  may already be present in the repository.
 
 ## v1 Must Have
 

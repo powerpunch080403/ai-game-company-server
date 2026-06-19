@@ -1,144 +1,125 @@
 # First Portfolio Game Resumption Guide
 
-이 문서는 Codex CLI 사용량이 초기화된 후 즉시 첫 번째 포트폴리오 게임 **Neon Survival Prototype**의 개발에 착수할 수 있도록 돕는 실전 가이드라인 및 프롬프트 명세입니다.
+This guide is the safe restart prompt for beginning the first portfolio game,
+**Neon Survival Prototype**.
 
----
+Scope: **Task 1 Project Bootstrap only**.
 
-## 1. 첫 3개 Task 상세 가이드 (15~30분 크기)
+Do not start any later task.
+Do not lease any task after Task 1.
+Do not approve or execute a merge.
+Stop after the Task 1 worker branch is pushed and the worker report is
+submitted for Owner review.
 
-에이전트가 오작동하지 않고 한 번에 성공하도록 매우 구체적이고 논리적인 조건들로 가이드라인을 정의했습니다.
+## Task 1: Project Bootstrap
 
-### Task 1: Project Bootstrap
-* **Goal**: Initialize the project directory with `.game-company` scaffolding and baseline directories.
-* **Role**: `code_worker`
-* **Branch**: `worker/project-bootstrap`
-* **Estimated Minutes**: 30
-* **Requirements**:
-  - Scaffold project structure inside the workspace directory (`<WORKSPACE_PATH>`):
-    * Create empty directories: `src/`, `src/game/`, `tests/`, `scripts/`, `assets/`, `docs/`.
-    * Ensure `__init__.py` files exist in `src/` and `src/game/` to make them python packages.
-  - Create a valid `.game-company/project.json` containing:
-    ```json
-    {
-      "project_name": "Neon Survival Prototype",
-      "engine": "pygame",
-      "version": "1.0.0"
-    }
-    ```
-  - Create `.game-company/test_runner.json` configured to run pytest:
-    ```json
-    {
-      "phases": {
-        "setup": "pip install -r requirements.txt",
-        "test": "python -m pytest",
-        "smoke": "python scripts/smoke_check.py"
-      }
-    }
-    ```
-  - Create a minimal `requirements.txt` containing `pygame-ce>=2.5.0` or `pygame>=2.5.0`.
-  - Create a baseline `.gitignore` containing:
-    ```text
-    __pycache__/
-    *.pyc
-    .venv/
-    *.log
-    .game-company/artifacts/
-    ```
-  - Create `README.md` containing the project overview (copying the text from `docs/GAME_README_DRAFT.md` is recommended).
-  - Create `scripts/smoke_check.py` as a minimal stub (e.g. print message and exit 0).
-  - Create `tests/test_bootstrap.py` as a minimal unit test check (e.g. test case that always passes).
-* **Success Criteria**:
-  - The directories `src/game`, `tests`, and `scripts` exist.
-  - `.game-company/test_runner.json` is present and valid.
-  - `requirements.txt` lists Pygame.
-  - `tests/test_bootstrap.py` passes.
-* **Evidence Required**: Workspace worker output log showing list of directories created.
-* **Memory Refs**: `project_rules`, `project_knowledge`
+- Role: `code_worker`
+- Branch: `worker/project-bootstrap`
+- Estimated minutes: 30
 
----
+Goal:
+Initialize the project workspace with baseline folders, `.game-company`
+configuration, pytest smoke checks, and project documentation stubs.
 
-### Task 2: Basic Game Loop
-* **Goal**: Create the main entry point running a standard Pygame game loop.
-* **Role**: `code_worker`
-* **Branch**: `worker/basic-game-loop`
-* **Estimated Minutes**: 20
-* **Requirements**:
-  - Create `src/game/settings.py` containing:
-    ```python
-    SCREEN_WIDTH = 800
-    SCREEN_HEIGHT = 600
-    FPS = 60
-    BG_COLOR = (20, 20, 25) # Neon Dark Theme
-    ```
-  - Create `src/game/main.py` implementing:
-    * Pygame window initialization (`pygame.init()`, `pygame.display.set_mode()`, `pygame.display.set_caption()`).
-    * Game clock (`pygame.time.Clock()`).
-    * Capture `pygame.QUIT` to break the loop.
-    * Dummy video driver support (`os.environ.get("SDL_VIDEODRIVER") == "dummy"`).
-    * Screen fill with `BG_COLOR` and frame update via `pygame.display.flip()`.
-* **Success Criteria**:
-  - Running `python -m src.game.main` in headless dummy mode completes successfully without crashing.
-* **Evidence Required**: Test runner output showing game loop start and clean exit codes.
-* **Memory Refs**: `coding_rules`
+Requirements:
 
----
+- Scaffold the project structure inside the assigned workspace directory.
+- Create empty directories:
+  - `src/`
+  - `src/game/`
+  - `tests/`
+  - `scripts/`
+  - `assets/`
+  - `docs/`
+- Ensure `src/__init__.py` and `src/game/__init__.py` exist.
+- Create `.game-company/project.json`:
 
-### Task 3: Player Movement & Boundary Checks
-* **Goal**: Implement WASD player keyboard control and boundary check logic.
-* **Role**: `code_worker`
-* **Branch**: `worker/player-movement`
-* **Estimated Minutes**: 25
-* **Requirements**:
-  - Create `src/game/player.py` containing:
-    * `Player` class with `x`, `y`, `speed` (default: 5), `radius` (default: 15).
-    * `update(keys)` method adjusting coordinate positions based on WASD keys pressed.
-    * Constraint checks clamping `x` inside `[radius, SCREEN_WIDTH - radius]` and `y` inside `[radius, SCREEN_HEIGHT - radius]`.
-    * `render(screen)` method drawing a glowing neon cyan circle: `pygame.draw.circle(screen, (0, 255, 255), (int(self.x), int(self.y)), self.radius, 2)`.
-  - Instantiate `Player` in `src/game/main.py` and invoke its `update(pygame.key.get_pressed())` and `render(screen)` inside the main game loop.
-  - Create `tests/test_player.py` with unit tests checking:
-    * Movement updates coordinates correctly.
-    * Player cannot move beyond screen borders.
-* **Success Criteria**:
-  - Running `python -m pytest tests/test_player.py` passes all assertions.
-* **Evidence Required**: Pytest test run log (`test.log`).
-* **Memory Refs**: `coding_rules`, `project_knowledge`
+```json
+{
+  "project_name": "Neon Survival Prototype",
+  "engine": "pygame",
+  "version": "1.0.0"
+}
+```
 
----
+- Create `.game-company/test_runner.json`:
 
-## 2. Codex CLI 재개 후 실행할 첫 프롬프트 (Execution Prompt)
+```json
+{
+  "phases": {
+    "setup": "pip install -r requirements.txt",
+    "test": "python -m pytest",
+    "smoke": "python scripts/smoke_check.py"
+  }
+}
+```
 
-Codex CLI가 활성화되었을 때 즉시 새 터미널이나 에이전트 인스턴스에 입력하여 실행을 개시할 프롬프트입니다.
+- Create `requirements.txt` containing either `pygame-ce>=2.5.0` or
+  `pygame>=2.5.0`.
+- Create `.gitignore` containing:
 
 ```text
-현재 로컬 개발 서버(FastAPI 포트 8080)와 Discord Gateway가 로컬에서 구동 중입니다.
-첫 포트폴리오 게임 개발 착수를 위해 아래 단계를 정밀하게 자동 수행하고, 절대로 다른 추가적인 작업을 진행하지 마십시오.
-
-[주의 사항]
-- 본 작업은 오직 "Task 1: Project Bootstrap" 개발 단계만 다룹니다.
-- Basic Game Loop(Task 2) 또는 Player Movement(Task 3) 등 다음 작업들을 미리 작성하거나 동시에 구현하지 마십시오.
-- 어느 단계에서든 오류나 실패가 발생할 경우, 작업을 즉시 중단(Stop/Pause)하고 현재 상태를 사용자에게 보고한 뒤 피드백을 기다려야 합니다.
-- 이 작업을 마친 후에는 다음 Task(Task 2 등)로 임대(Lease)를 시도하거나 넘어가지 말고 정지하십시오.
-- 작업을 완료하면 브랜치를 Push하고 report를 작성한 뒤 수동으로 Owner review를 대기하는 상태에서 멈춰야 합니다. 자동으로 머지(Merge)를 시도하거나 Discord 승인을 트리거하지 마십시오. (Do not lease Task 2. Do not merge automatically. Stop after bootstrap branch/report is ready for manual Owner review.)
-
-[수행할 단계]
-1. `docs/FIRST_PORTFOLIO_GAME_SEED_DRAFT.md`에 기술된 "Neon Survival Prototype" 프로젝트 기획 명세를 바탕으로, `data/game_company.sqlite3` 데이터베이스에 신규 Project, Epic, SubEpic, 그리고 11개의 Task를 생성하는 시드 파이썬 스크립트(`scripts/seed_portfolio_game.py`)를 작성하고 실행해 주십시오. (주의: DB 외래 키 제약 조건 만족을 위해 project가 먼저 들어간 뒤 epic과 task가 순서대로 insert되어야 합니다.)
-2. 시드 스크립트 실행이 성공하면, 첫 번째 작업인 "Task 1: Project Bootstrap" (branch: `worker/project-bootstrap`) 작업만 Lease(임대) 받아 주십시오.
-3. 임대받은 `worker/project-bootstrap` 브랜치를 기준으로 새 워크스페이스 디렉토리(`<WORKSPACE_PATH>`)에 git repository를 생성(git init)하고 다음 파일들만 정확히 작성해 주십시오 (어떠한 실제 게임 루프나 이동 로직도 코딩하지 마십시오):
-   - 생성 및 구성해야 할 파일/디렉토리 목록:
-     * `src/` 및 `src/game/` 디렉토리 생성
-     * `src/__init__.py` 및 `src/game/__init__.py` (빈 파이썬 패키지 선언 파일)
-     * `tests/`, `scripts/`, `assets/`, `docs/` 디렉토리 생성
-     * `.game-company/project.json` (프로젝트 정보 및 pygame 엔진 타입 설정)
-     * `.game-company/test_runner.json` (setup, test, smoke 단계 실행 정의)
-     * `requirements.txt` (pygame-ce>=2.5.0 또는 pygame>=2.5.0 라이브러리 목록 지정)
-     * `.gitignore` (__pycache__/, .venv/, *.log, .game-company/artifacts/ 타겟 지정)
-     * `README.md` (docs/GAME_README_DRAFT.md 내용을 바탕으로 게임 소개서 배치)
-     * `scripts/smoke_check.py` (최소 스모크 테스트 실행 메시지 출력 및 exit 0 반환용 stub)
-     * `tests/test_bootstrap.py` (항상 통과하는 minimal test stub)
-4. 파일 작성이 완료되면 다음 테스트 명령어를 실행해 설정을 로컬 검증하십시오:
-   - 검증 테스트 명령어:
-     * Test Runner의 설정 로컬 정형 검증 (또는 API `/projects/{id}/tasks/{id}/test` Dry-Run 호출)
-5. 테스트 검증이 성공적으로 통과하면 아래 메시지로 git commit을 작성하고 push해 주십시오:
-   - 커밋 메시지: `feat: scaffold neon-survival-prototype workspace structure`
-6. 푸시 후, 서버에 작업 보고서(report)를 API로 등록하고, 결재 요청을 발송한 상태에서 즉시 멈추십시오. Owner가 수동으로 승인할 때까지 더 이상 동작하지 마십시오.
+__pycache__/
+*.pyc
+.venv/
+*.log
+.game-company/artifacts/
 ```
+
+- Create `README.md` with the project overview.
+- Create `scripts/smoke_check.py` as a minimal smoke stub that prints a short
+  message and exits with status 0.
+- Create `tests/test_bootstrap.py` as a minimal pytest test that passes.
+
+Success criteria:
+
+- `src/game`, `tests`, and `scripts` exist.
+- `.game-company/test_runner.json` exists and is valid JSON.
+- `requirements.txt` lists Pygame.
+- `python -m pytest` passes.
+- `python scripts/smoke_check.py` exits with status 0.
+
+Evidence required:
+
+- Worker output log showing the files and directories created.
+- Pytest output.
+- Smoke check output.
+- Git branch name.
+- Git commit SHA.
+
+## Execution Prompt
+
+Use this prompt when restarting the first portfolio game from Codex CLI or
+another coding CLI.
+
+```text
+You are the code worker for Neon Survival Prototype.
+
+Run only Task 1: Project Bootstrap.
+
+Do not implement the game loop.
+Do not implement player movement.
+Do not lease any later task.
+Do not approve or execute a merge.
+
+Create only the project bootstrap structure described in
+docs/FIRST_PORTFOLIO_GAME_RESUMPTION_PROMPT.md.
+
+Work on the assigned branch only.
+Modify only files required for bootstrap.
+Run pytest and the smoke check.
+Commit the bootstrap result.
+Push the worker branch if a remote is configured.
+Submit the worker report with the real head_commit.
+
+Stop after the branch/report is ready for manual Owner review.
+```
+
+## Owner Stop Condition
+
+After Task 1 is reported:
+
+1. Review the worker report.
+2. Review changed files and test evidence.
+3. Decide manually whether to approve, retry, or cancel.
+4. Continue with later work only after manual Owner review is complete.
