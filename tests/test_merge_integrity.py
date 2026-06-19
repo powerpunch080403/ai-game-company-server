@@ -238,6 +238,63 @@ def test_dry_run_reasons_and_execution_parity(tmp_path: Path, repo: Repository) 
     with pytest.raises(ValueError, match="source_branch_head_mismatch"):
         repo.execute_merge_candidate(cand["id"])
 
+def test_execute_merge_candidate_merges_into_base_branch_from_worker_branch(tmp_path: Path, repo: Repository) -> None:
+    remote, workspace = make_repo(tmp_path)
+    proj = repo.create_project(ProjectCreate(
+        name="Smoke Project",
+        repo_url=str(remote),
+        workspace_path=str(workspace),
+        base_branch="main"
+    ))
+    epic = repo.create_epic(proj["id"], EpicCreate(name="Test Epic", goal="Test Epic Goal"))
+    sub_epic = repo.create_sub_epic(epic["id"], SubEpicCreate(name="Test Sub Epic", goal="Test Sub Epic Goal"))
+
+    base_commit = git(["rev-parse", "HEAD"], cwd=workspace)
+    task = repo.create_task(sub_epic["id"], TaskCreate(
+        role="code_worker",
+        goal="Update file",
+        requirements=["Modify README.md"],
+        success_criteria=["README updated"],
+        branch="worker/execute-from-worker-branch",
+        write_scope=["README.md"]
+    ))
+
+    leased = repo.lease_next_task("worker-1", "code_worker", 30, requires_project_config=True)
+    branch_name = leased["branch"]
+    git(["checkout", "-b", branch_name, base_commit], cwd=workspace)
+    (workspace / "README.md").write_text("# Demo updated\n", encoding="utf-8")
+    git(["add", "README.md"], cwd=workspace)
+    git(["commit", "-m", "Worker commit"], cwd=workspace)
+    head_commit = git(["rev-parse", "HEAD"], cwd=workspace)
+    git(["push", "origin", branch_name], cwd=workspace)
+
+    report = WorkerReportCreate(
+        status="success",
+        estimated_minutes=15,
+        actual_minutes=10,
+        productive_minutes=10,
+        error_minutes=0,
+        retry_count=0,
+        files_changed=["README.md"],
+        changed_files=["README.md"],
+        tests=["test"],
+        summary="done",
+        head_commit=head_commit
+    )
+    repo.complete_task(task["id"], "worker-1", report)
+
+    candidates = repo.list_merge_candidates(proj["id"])
+    assert len(candidates) == 1
+    cand = candidates[0]
+    repo.approve_merge_candidate(cand["id"])
+    assert git(["branch", "--show-current"], cwd=workspace) == branch_name
+
+    merged = repo.execute_merge_candidate(cand["id"])
+
+    assert merged["status"] == "merged"
+    assert git(["branch", "--show-current"], cwd=workspace) == "main"
+    assert "# Demo updated" in git(["show", "main:README.md"], cwd=workspace)
+
 def test_missing_git_config_on_code_task_does_not_bypass(tmp_path: Path, repo: Repository) -> None:
     # Task is code_worker, but project has no git configurations
     proj = repo.create_project(ProjectCreate(

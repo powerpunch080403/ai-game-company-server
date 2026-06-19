@@ -2236,6 +2236,30 @@ class Repository:
         if not ws:
             raise ValueError("workspace_unavailable")
         branch_name = candidate.get("branch_name")
+        base_commit = candidate.get("base_commit")
+
+        checkout_base = subprocess.run(
+            ["git", "checkout", db],
+            capture_output=True,
+            text=True,
+            cwd=ws,
+            timeout=10,
+        )
+        if checkout_base.returncode != 0:
+            err_msg = checkout_base.stderr.strip() or checkout_base.stdout.strip() or "unknown error"
+            short_err = err_msg.split('\n')[0][:100]
+            raise ValueError(f"workspace_unavailable: {short_err}")
+
+        if base_commit:
+            current_head = subprocess.run(
+                ["git", "rev-parse", "HEAD"],
+                capture_output=True,
+                text=True,
+                cwd=ws,
+                timeout=5,
+            )
+            if current_head.returncode != 0 or current_head.stdout.strip() != base_commit:
+                raise ValueError("stale_base")
 
         # Perform Git merge: git merge --no-ff --no-edit <branch_name>
         res_merge = subprocess.run(
