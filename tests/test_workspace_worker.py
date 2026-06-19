@@ -73,6 +73,20 @@ def test_workspace_command_creates_and_commits_file(tmp_path: Path) -> None:
     assert run_git(["branch", "--show-current"], cwd=workspace) == "worker/create-notes"
 
 
+def test_workspace_command_decodes_utf8_cli_output(tmp_path: Path) -> None:
+    remote, workspace = make_repo(tmp_path)
+    package = make_package()
+    prepare_branch(package, str(remote), workspace, "main")
+    run_dir = tmp_path / "run"
+    write_task_package(run_dir, package)
+
+    command = "python -c \"import sys; sys.stdout.buffer.write('✓ utf8 output'.encode('utf-8'))\""
+    return_code, output = run_workspace_command(command, workspace, package, run_dir)
+
+    assert return_code == 0
+    assert "utf8 output" in output
+
+
 def test_push_branch_publishes_worker_branch(tmp_path: Path) -> None:
     remote, workspace = make_repo(tmp_path)
     package = make_package()

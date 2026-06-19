@@ -53,6 +53,8 @@ def run_workspace_command(command: str, workspace: Path, package: dict[str, Any]
         env=env,
         shell=True,
         text=True,
+        encoding="utf-8",
+        errors="replace",
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
         check=False,
