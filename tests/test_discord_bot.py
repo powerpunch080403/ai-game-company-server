@@ -310,6 +310,40 @@ def test_build_owner_run_payload_includes_recent_discord_conversation() -> None:
     assert "Current user message:\n1번" in payload["context"]
 
 
+def test_build_owner_run_payload_for_owner_room_requests_conversational_reply() -> None:
+    context = DiscordMessageContext(guild_id="guild-1", channel_id="channel-1", content="continue")
+    mapping = {
+        "mapping_id": "mapping-1",
+        "conversation_kind": "owner_room",
+        "thread_role": "owner-design",
+    }
+    action = route_discord_message(context, mapping)
+
+    payload = build_owner_run_payload(context, mapping, action)
+
+    assert "This is the human-facing Owner room." in payload["context"]
+    assert "Reply naturally and concisely in Korean." in payload["context"]
+    assert "Do not expose raw planning sections" in payload["context"]
+    assert "decision_summary" in payload["context"]
+
+
+def test_build_owner_run_payload_for_project_owner_prefers_readable_summary() -> None:
+    context = DiscordMessageContext(guild_id="guild-1", channel_id="channel-1", content="continue")
+    mapping = {
+        "mapping_id": "mapping-1",
+        "project_id": 7,
+        "conversation_kind": "project",
+        "thread_role": "owner-tasks",
+    }
+    action = route_discord_message(context, mapping)
+
+    payload = build_owner_run_payload(context, mapping, action)
+
+    assert "This is a project Owner conversation with the human." in payload["context"]
+    assert "Prefer a readable Korean summary" in payload["context"]
+    assert "only when the user explicitly asks to list or create worker tasks" in payload["context"]
+
+
 def test_attach_owner_run_payload_only_for_owner_actions() -> None:
     context = DiscordMessageContext(guild_id="guild-1", channel_id="channel-1", content="hello")
     mapping = {"mapping_id": "mapping-1", "conversation_kind": "owner_room", "thread_role": "owner-tasks"}

@@ -173,6 +173,8 @@ def build_owner_run_payload(
     dry_run: bool = True,
 ) -> dict[str, Any]:
     objective = context.content.strip() or "Handle Discord Owner conversation."
+    conversation_kind = action.conversation_kind or mapping.get("conversation_kind") or "unknown"
+    thread_role = action.thread_role or mapping.get("thread_role") or "unknown"
     context_lines = [
         "Source: Discord operator console.",
         f"Action type: {action.action_type}",
@@ -181,9 +183,30 @@ def build_owner_run_payload(
         f"Thread: {context.thread_id or 'channel'}",
         f"Author: {context.author_id or 'unknown'}",
         f"Mapping: {action.mapping_id or mapping.get('mapping_id') or 'unknown'}",
-        f"Conversation: {action.conversation_kind or mapping.get('conversation_kind') or 'unknown'}",
-        f"Thread role: {action.thread_role or mapping.get('thread_role') or 'unknown'}",
+        f"Conversation: {conversation_kind}",
+        f"Thread role: {thread_role}",
     ]
+    if conversation_kind == "owner_room":
+        context_lines.extend(
+            [
+                "",
+                "Discord reply style:",
+                "- This is the human-facing Owner room.",
+                "- Reply naturally and concisely in Korean.",
+                "- Do not expose raw planning sections such as decision_summary, memory_writes, project_changes, epics, sub_epics, tasks, or review_notes.",
+                "- If a plan is useful, summarize the next step in plain language and ask only for true decision gates.",
+            ]
+        )
+    elif conversation_kind == "project" and thread_role in {"owner-design", "owner-tasks"}:
+        context_lines.extend(
+            [
+                "",
+                "Discord reply style:",
+                "- This is a project Owner conversation with the human.",
+                "- Prefer a readable Korean summary over raw internal planning sections.",
+                "- Use structured task details only when the user explicitly asks to list or create worker tasks.",
+            ]
+        )
     project_id = action.project_id if action.project_id is not None else mapping.get("project_id")
     if project_id is not None:
         context_lines.append(f"Project id: {project_id}")
