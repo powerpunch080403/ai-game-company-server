@@ -146,6 +146,216 @@ def handle_gateway_message(
     return action
 
 
+BOOTSTRAP_PROJECT_NAME = "Coin Arena Server Test"
+BOOTSTRAP_EPIC_NAME = "Project Bootstrap"
+BOOTSTRAP_SUB_EPIC_NAME = "Canvas Client Bootstrap"
+BOOTSTRAP_TASK_BRANCH = "worker/canvas-client-bootstrap"
+BOOTSTRAP_TASK_TITLE = "Canvas client bootstrap"
+
+
+def should_create_bootstrap_task(context: DiscordMessageContext, action: DiscordBotAction) -> bool:
+    if not action.needs_owner:
+        return False
+    normalized = context.content.replace(" ", "").lower()
+    if not any(keyword in normalized for keyword in ("시작", "계속진행", "진행해", "start")):
+        return False
+    recent = "\n".join(context.recent_messages).lower()
+    cues = ("30초 코인", "coin arena", "web/canvas", "canvas", "서버 테스트")
+    return any(cue in recent for cue in cues)
+
+
+def find_project_by_name(projects: list[dict[str, Any]], name: str) -> dict[str, Any] | None:
+    for project in projects:
+        if project.get("name") == name:
+            return project
+    return None
+
+
+def find_tree_epic(tree: dict[str, Any], name: str) -> dict[str, Any] | None:
+    for epic in tree.get("epics", []):
+        if epic.get("name") == name:
+            return epic
+    return None
+
+
+def find_tree_sub_epic(epic: dict[str, Any] | None, name: str) -> dict[str, Any] | None:
+    if not epic:
+        return None
+    for sub_epic in epic.get("sub_epics", []):
+        if sub_epic.get("name") == name:
+            return sub_epic
+    return None
+
+
+def find_tree_task(tree: dict[str, Any], branch: str) -> dict[str, Any] | None:
+    for epic in tree.get("epics", []):
+        for sub_epic in epic.get("sub_epics", []):
+            for task in sub_epic.get("tasks", []):
+                if task.get("branch") == branch:
+                    return task
+    return None
+
+
+def ensure_bootstrap_task(api: GameCompanyApiClient) -> dict[str, Any]:
+    projects = api.list_projects()
+    project = find_project_by_name(projects, BOOTSTRAP_PROJECT_NAME)
+    created_project = False
+    if project is None:
+        project = api.create_project(
+            {
+                "name": BOOTSTRAP_PROJECT_NAME,
+                "description": "Tiny Web/Canvas 30-second coin arena used to validate the AI Game Company server loop.",
+                "engine": "Web/Canvas",
+                "repo_url": "",
+                "workspace_path": "",
+                "base_branch": "main",
+            }
+        )
+        created_project = True
+
+    tree = api.get_project_tree(project["id"])
+    existing_task = find_tree_task(tree, BOOTSTRAP_TASK_BRANCH)
+    if existing_task is not None:
+        return {
+            "project": project,
+            "task": existing_task,
+            "created_project": created_project,
+            "created_task": False,
+            "thread_reference": None,
+        }
+
+    epic = find_tree_epic(tree, BOOTSTRAP_EPIC_NAME)
+    if epic is None:
+        epic = api.create_epic(
+            project["id"],
+            {
+                "name": BOOTSTRAP_EPIC_NAME,
+                "goal": "Create the smallest runnable Web/Canvas game project structure for server pipeline testing.",
+            },
+        )
+
+    sub_epic = find_tree_sub_epic(epic, BOOTSTRAP_SUB_EPIC_NAME)
+    if sub_epic is None:
+        sub_epic = api.create_sub_epic(
+            epic["id"],
+            {
+                "name": BOOTSTRAP_SUB_EPIC_NAME,
+                "goal": "Prepare static Canvas client scaffolding without implementing the full game loop.",
+            },
+        )
+
+    task = api.create_task(
+        sub_epic["id"],
+        {
+            "role": "code_worker",
+            "goal": "Bootstrap the 30-second coin arena Web/Canvas client scaffold.",
+            "requirements": [
+                "Create a minimal static Canvas client structure.",
+                "Show server connection status placeholder text.",
+                "Add room create/join button placeholders.",
+                "Do not implement the full realtime game loop yet.",
+            ],
+            "success_criteria": [
+                "Client can be opened locally without a build step.",
+                "Canvas renders a visible bootstrap screen.",
+                "Smoke-check instructions or stub are present.",
+                "Changes stay inside the bootstrap write scope.",
+            ],
+            "estimated_minutes": 15,
+            "memory_refs": [],
+            "branch": BOOTSTRAP_TASK_BRANCH,
+            "write_scope": ["client/coin-arena/**", "tests/**", "README.md"],
+            "read_scope": ["README.md", "docs/**", "client/coin-arena/**", "tests/**"],
+            "forbidden_scope": [
+                ".env",
+                ".env.*",
+                "**/.env",
+                "**/.env.*",
+                ".git/**",
+                ".github/**",
+                "node_modules/**",
+                ".venv/**",
+                "venv/**",
+                "__pycache__/**",
+            ],
+        },
+    )
+    return {
+        "project": project,
+        "task": task,
+        "created_project": created_project,
+        "created_task": True,
+        "thread_reference": None,
+    }
+
+
+async def create_task_thread_for_bootstrap(message: Any, api: GameCompanyApiClient, result: dict[str, Any]) -> dict[str, Any]:
+    task = result["task"]
+    project = result["project"]
+    channel = getattr(message, "channel", None)
+    create_thread = getattr(channel, "create_thread", None)
+    if not callable(create_thread):
+        return {"created": False, "reason": "channel_does_not_support_threads"}
+
+    thread_name = f"Task-{task['id']}: {BOOTSTRAP_TASK_TITLE}"
+    if len(thread_name) > 100:
+        thread_name = thread_name[:97] + "..."
+    thread = await create_thread(name=thread_name, auto_archive_duration=1440)
+    thread_id = snowflake(getattr(thread, "id", ""))
+    guild_id = snowflake(getattr(getattr(message, "guild", None), "id", ""))
+    parent_id = snowflake(getattr(channel, "id", ""))
+    thread_url = f"https://discord.com/channels/{guild_id}/{parent_id}/{thread_id}" if guild_id and thread_id else ""
+    initial_message = (
+        f"Task #{task['id']}: {BOOTSTRAP_TASK_TITLE}\n\n"
+        f"Project: {project['name']} (#{project['id']})\n"
+        f"Branch: {task['branch']}\n\n"
+        "Goal:\n"
+        f"{task['goal']}\n\n"
+        "Write scope:\n"
+        + "\n".join(f"- {item}" for item in task.get("write_scope", []))
+        + "\n\nWorker notes:\n"
+        "- Work only inside write_scope.\n"
+        "- Do not run a merge.\n"
+        "- Report the real head_commit after committing."
+    )
+    send = getattr(thread, "send", None)
+    if callable(send):
+        await send(initial_message)
+
+    ref = api.upsert_task_thread_reference(
+        task["id"],
+        {
+            "provider": "discord",
+            "channel_id": parent_id,
+            "thread_id": thread_id,
+            "thread_url": thread_url,
+            "title": BOOTSTRAP_TASK_TITLE,
+            "summary": initial_message[:200],
+            "created_by": "discord_owner",
+            "metadata": {"kind": "bootstrap_task"},
+        },
+    )
+    mapping = api.upsert_discord_mapping(
+        {
+            "discord_guild_id": guild_id,
+            "discord_channel_id": parent_id,
+            "discord_thread_id": thread_id,
+            "project_id": project["id"],
+            "conversation_kind": "project",
+            "thread_role": "owner-tasks",
+            "created_by": "discord_gateway",
+            "notes": f"Task thread for task #{task['id']}.",
+        }
+    )
+    return {
+        "created": True,
+        "thread_id": thread_id,
+        "thread_url": thread_url,
+        "thread_reference": ref,
+        "mapping": mapping,
+    }
+
+
 def format_context_status(status: dict[str, Any] | None) -> str:
     if not status:
         return ""
@@ -229,6 +439,25 @@ def format_gateway_reply(action: DiscordBotAction) -> str | None:
             status_kor = "승인" if status == "approved" else "거절(반려)"
             return f"결재 건 #{res.get('approval_id')} '{req_summary}'이(가) 성공적으로 {status_kor} 처리되었습니다."
     if action.needs_owner:
+        operation_result = getattr(action, "operation_result", None)
+        if operation_result and operation_result.get("kind") == "bootstrap_task_created":
+            result = operation_result
+            task = result["task"]
+            project = result["project"]
+            thread = result.get("thread") or {}
+            thread_line = (
+                f"스레드도 만들었어: {thread.get('thread_url')}"
+                if thread.get("created") and thread.get("thread_url")
+                else f"스레드는 아직 못 만들었어: {thread.get('reason', 'unknown')}"
+            )
+            return (
+                "좋아, 말만 한 게 아니라 서버에 첫 작업을 실제로 만들었어.\n\n"
+                f"프로젝트: {project['name']} (#{project['id']})\n"
+                f"태스크: #{task['id']} {BOOTSTRAP_TASK_TITLE}\n"
+                f"브랜치: {task['branch']}\n"
+                f"{thread_line}\n\n"
+                "이제 워커가 lease하면 이 작업부터 가져갈 수 있어."
+            )
         if action.owner_run_result:
             return format_owner_run_result(action.owner_run_result)
         if action.owner_run_payload:
@@ -263,7 +492,7 @@ async def handle_discord_message(
     async def process_message() -> DiscordBotAction:
         recent_messages = await collect_recent_discord_messages(message)
         context = discord_message_to_context(message, recent_messages=recent_messages)
-        return await asyncio.to_thread(
+        action = await asyncio.to_thread(
             handle_gateway_message,
             context,
             api,
@@ -271,6 +500,18 @@ async def handle_discord_message(
             execute_owner_run,
             check_context_for_owner,
         )
+        if should_create_bootstrap_task(context, action):
+            task_result = await asyncio.to_thread(ensure_bootstrap_task, api)
+            thread_result = {"created": False, "reason": "task_already_exists"}
+            if task_result.get("created_task"):
+                thread_result = await create_task_thread_for_bootstrap(message, api, task_result)
+            operation_result = {
+                "kind": "bootstrap_task_created",
+                **task_result,
+                "thread": thread_result,
+            }
+            action = replace(action, operation_result=operation_result)
+        return action
 
     if callable(typing):
         typing_context = typing()

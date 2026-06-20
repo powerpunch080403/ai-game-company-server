@@ -31,9 +31,15 @@ class FakeChannel:
         self.typing_entered = 0
         self.typing_fails = typing_fails
         self.history_messages = history_messages or []
+        self.created_threads: list[FakeThread] = []
 
     async def send(self, content: str) -> None:
         self.sent.append(content)
+
+    async def create_thread(self, name: str, auto_archive_duration: int = 1440):
+        thread = FakeThread(f"thread-{len(self.created_threads) + 1}", name)
+        self.created_threads.append(thread)
+        return thread
 
     async def history(self, limit: int, before=None, oldest_first: bool = False):
         selected = self.history_messages[-limit:] if limit else []
@@ -57,6 +63,16 @@ class FakeChannel:
         return FakeTyping()
 
 
+class FakeThread:
+    def __init__(self, thread_id: str, name: str):
+        self.id = thread_id
+        self.name = name
+        self.sent: list[str] = []
+
+    async def send(self, content: str) -> None:
+        self.sent.append(content)
+
+
 class FakeApi:
     def __init__(self, mappings: list[dict], pending_approvals: list[dict] | None = None):
         self.mappings = mappings
@@ -64,6 +80,11 @@ class FakeApi:
         self.context_payloads: list[tuple[str, dict]] = []
         self.owner_payloads: list[dict] = []
         self.decided_payloads: list[tuple[str, dict]] = []
+        self.projects: list[dict] = []
+        self.trees: dict[int, dict] = {}
+        self.created_tasks: list[dict] = []
+        self.thread_refs: list[tuple[int, dict]] = []
+        self.discord_mappings: list[dict] = []
 
     def list_discord_mappings(self, context):
         return self.mappings
@@ -92,6 +113,53 @@ class FakeApi:
             "request_summary": "Test private repo creation",
             "approved_by": payload.get("approved_by"),
         }
+
+    def list_projects(self):
+        return self.projects
+
+    def create_project(self, payload: dict):
+        project = {"id": len(self.projects) + 1, **payload}
+        self.projects.append(project)
+        self.trees[project["id"]] = {**project, "epics": []}
+        return project
+
+    def get_project_tree(self, project_id: int):
+        return self.trees[project_id]
+
+    def create_epic(self, project_id: int, payload: dict):
+        epic = {"id": 10 + len(self.trees[project_id]["epics"]), "project_id": project_id, **payload, "sub_epics": []}
+        self.trees[project_id]["epics"].append(epic)
+        return epic
+
+    def create_sub_epic(self, epic_id: int, payload: dict):
+        for tree in self.trees.values():
+            for epic in tree["epics"]:
+                if epic["id"] == epic_id:
+                    sub_epic = {"id": 20 + len(epic["sub_epics"]), "epic_id": epic_id, **payload, "tasks": []}
+                    epic["sub_epics"].append(sub_epic)
+                    return sub_epic
+        raise KeyError("epic not found")
+
+    def create_task(self, sub_epic_id: int, payload: dict):
+        task = {"id": 30 + len(self.created_tasks), "sub_epic_id": sub_epic_id, "status": "pending", **payload}
+        self.created_tasks.append(task)
+        for tree in self.trees.values():
+            for epic in tree["epics"]:
+                for sub_epic in epic["sub_epics"]:
+                    if sub_epic["id"] == sub_epic_id:
+                        sub_epic["tasks"].append(task)
+                        return task
+        raise KeyError("sub epic not found")
+
+    def upsert_task_thread_reference(self, task_id: int, payload: dict):
+        ref = {"id": len(self.thread_refs) + 1, "task_id": task_id, "project_id": 1, **payload}
+        self.thread_refs.append((task_id, payload))
+        return ref
+
+    def upsert_discord_mapping(self, payload: dict):
+        mapping = {"mapping_id": f"mapping-{len(self.discord_mappings) + 1}", **payload}
+        self.discord_mappings.append(mapping)
+        return mapping
 
 
 def fake_message(
@@ -293,6 +361,87 @@ def test_handle_discord_message_sends_recent_history_to_owner() -> None:
     assert action.action_type == "owner_room_message"
     assert "Bot OwnerBot: 선택지: 1. Web/Canvas 2. Godot" in api.owner_payloads[0]["context"]
     assert "sonyeongha: 1번" in api.owner_payloads[0]["context"]
+
+
+def test_handle_discord_message_start_creates_bootstrap_task_and_thread() -> None:
+    channel = FakeChannel(
+        "channel-1",
+        history_messages=[
+            fake_message("Web/Canvas 기반 30초 코인 아레나로 시작하자", bot=True, name="OwnerBot"),
+        ],
+    )
+    message = fake_message("시작해줘", channel, name="sonyeongha")
+    api = FakeApi(
+        [
+            {
+                "mapping_id": "mapping-1",
+                "discord_guild_id": "guild-1",
+                "discord_channel_id": "channel-1",
+                "discord_thread_id": "",
+                "conversation_kind": "owner_room",
+                "thread_role": "owner-design",
+                "project_id": None,
+                "archived_at": None,
+            }
+        ]
+    )
+
+    action = asyncio.run(handle_discord_message(message, api, submit_owner_run=True, execute_owner_run=True))
+
+    assert action.operation_result["kind"] == "bootstrap_task_created"
+    assert api.projects[0]["name"] == "Coin Arena Server Test"
+    assert api.created_tasks[0]["branch"] == "worker/canvas-client-bootstrap"
+    assert api.thread_refs[0][0] == api.created_tasks[0]["id"]
+    assert api.discord_mappings[0]["discord_thread_id"] == "thread-1"
+    assert channel.created_threads[0].name.startswith("Task-")
+    assert "Branch: worker/canvas-client-bootstrap" in channel.created_threads[0].sent[0]
+    assert "말만 한 게 아니라 서버에 첫 작업을 실제로 만들었어" in channel.sent[0]
+
+
+def test_handle_discord_message_start_reuses_existing_bootstrap_task() -> None:
+    channel = FakeChannel(
+        "channel-1",
+        history_messages=[
+            fake_message("Web/Canvas 기반 30초 코인 아레나로 시작하자", bot=True, name="OwnerBot"),
+        ],
+    )
+    message = fake_message("시작해줘", channel, name="sonyeongha")
+    api = FakeApi(
+        [
+            {
+                "mapping_id": "mapping-1",
+                "discord_guild_id": "guild-1",
+                "discord_channel_id": "channel-1",
+                "discord_thread_id": "",
+                "conversation_kind": "owner_room",
+                "thread_role": "owner-design",
+                "project_id": None,
+                "archived_at": None,
+            }
+        ]
+    )
+    project = api.create_project({"name": "Coin Arena Server Test", "description": "", "engine": "Web/Canvas"})
+    epic = api.create_epic(project["id"], {"name": "Project Bootstrap", "goal": ""})
+    sub_epic = api.create_sub_epic(epic["id"], {"name": "Canvas Client Bootstrap", "goal": ""})
+    api.create_task(
+        sub_epic["id"],
+        {
+            "role": "code_worker",
+            "goal": "existing",
+            "requirements": ["existing"],
+            "success_criteria": ["existing"],
+            "estimated_minutes": 15,
+            "memory_refs": [],
+            "branch": "worker/canvas-client-bootstrap",
+        },
+    )
+
+    action = asyncio.run(handle_discord_message(message, api, submit_owner_run=True, execute_owner_run=True))
+
+    assert action.operation_result["created_task"] is False
+    assert len(api.created_tasks) == 1
+    assert channel.created_threads == []
+    assert "태스크: #30" in channel.sent[0]
 
 
 def test_handle_discord_message_splits_long_replies() -> None:

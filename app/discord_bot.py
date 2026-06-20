@@ -33,6 +33,7 @@ class DiscordBotAction:
     context_status: dict[str, Any] | None = None
     owner_run_payload: dict[str, Any] | None = None
     owner_run_result: dict[str, Any] | None = None
+    operation_result: dict[str, Any] | None = None
     needs_owner: bool = False
     needs_approval: bool = False
     approval_result: dict[str, Any] | None = None
@@ -102,6 +103,54 @@ class GameCompanyApiClient:
     def create_owner_run(self, payload: dict[str, Any]) -> dict[str, Any]:
         with httpx.Client(timeout=self.owner_run_timeout_seconds) as client:
             response = client.post(f"{self.server}/owner/runs", json=payload, headers=self.headers())
+            response.raise_for_status()
+            return response.json()
+
+    def list_projects(self) -> list[dict[str, Any]]:
+        with httpx.Client(timeout=15) as client:
+            response = client.get(f"{self.server}/projects", headers=self.headers())
+            response.raise_for_status()
+            return response.json()
+
+    def create_project(self, payload: dict[str, Any]) -> dict[str, Any]:
+        with httpx.Client(timeout=15) as client:
+            response = client.post(f"{self.server}/projects", json=payload, headers=self.headers())
+            response.raise_for_status()
+            return response.json()
+
+    def get_project_tree(self, project_id: int) -> dict[str, Any]:
+        with httpx.Client(timeout=15) as client:
+            response = client.get(f"{self.server}/projects/{project_id}/tree", headers=self.headers())
+            response.raise_for_status()
+            return response.json()
+
+    def create_epic(self, project_id: int, payload: dict[str, Any]) -> dict[str, Any]:
+        with httpx.Client(timeout=15) as client:
+            response = client.post(f"{self.server}/projects/{project_id}/epics", json=payload, headers=self.headers())
+            response.raise_for_status()
+            return response.json()
+
+    def create_sub_epic(self, epic_id: int, payload: dict[str, Any]) -> dict[str, Any]:
+        with httpx.Client(timeout=15) as client:
+            response = client.post(f"{self.server}/epics/{epic_id}/sub-epics", json=payload, headers=self.headers())
+            response.raise_for_status()
+            return response.json()
+
+    def create_task(self, sub_epic_id: int, payload: dict[str, Any]) -> dict[str, Any]:
+        with httpx.Client(timeout=15) as client:
+            response = client.post(f"{self.server}/sub-epics/{sub_epic_id}/tasks", json=payload, headers=self.headers())
+            response.raise_for_status()
+            return response.json()
+
+    def upsert_task_thread_reference(self, task_id: int, payload: dict[str, Any]) -> dict[str, Any]:
+        with httpx.Client(timeout=15) as client:
+            response = client.put(f"{self.server}/tasks/{task_id}/thread-reference", json=payload, headers=self.headers())
+            response.raise_for_status()
+            return response.json()
+
+    def upsert_discord_mapping(self, payload: dict[str, Any]) -> dict[str, Any]:
+        with httpx.Client(timeout=15) as client:
+            response = client.post(f"{self.server}/discord/mappings", json=payload, headers=self.headers())
             response.raise_for_status()
             return response.json()
 
