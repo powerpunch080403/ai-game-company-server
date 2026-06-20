@@ -3,8 +3,11 @@ from __future__ import annotations
 import argparse
 import asyncio
 import os
+import subprocess
+import sys
 import traceback
 from dataclasses import asdict, dataclass, replace
+from pathlib import Path
 from typing import Any
 
 from dotenv import load_dotenv
@@ -153,6 +156,26 @@ BOOTSTRAP_TASK_BRANCH = "worker/canvas-client-bootstrap"
 BOOTSTRAP_TASK_TITLE = "Canvas client bootstrap"
 
 
+def env_flag(name: str, default: bool = False) -> bool:
+    raw = os.getenv(name)
+    if raw is None:
+        return default
+    return raw.strip().lower() in {"1", "true", "yes", "on"}
+
+
+def bootstrap_project_config() -> dict[str, str]:
+    return {
+        "engine": os.getenv("GAME_COMPANY_BOOTSTRAP_ENGINE", "Web/Canvas"),
+        "repo_url": os.getenv("GAME_COMPANY_BOOTSTRAP_REPO_URL", "").strip(),
+        "workspace_path": os.getenv("GAME_COMPANY_BOOTSTRAP_WORKSPACE_PATH", "").strip(),
+        "base_branch": os.getenv("GAME_COMPANY_BOOTSTRAP_BASE_BRANCH", "main").strip() or "main",
+    }
+
+
+def project_has_worker_config(project: dict[str, Any]) -> bool:
+    return bool(str(project.get("repo_url") or "").strip() and str(project.get("workspace_path") or "").strip())
+
+
 @dataclass(frozen=True)
 class OwnerToolCall:
     name: str
@@ -164,10 +187,10 @@ def detect_owner_tool_call(context: DiscordMessageContext, action: DiscordBotAct
     if not action.needs_owner:
         return None
     normalized = context.content.replace(" ", "").lower()
-    if not any(keyword in normalized for keyword in ("시작", "계속진행", "진행해", "start")):
+    if not any(keyword in normalized for keyword in ("시작", "계속진행", "진행해", "진행", "start", "continue")):
         return None
-    recent = "\n".join(context.recent_messages).lower()
-    cues = ("30초 코인", "coin arena", "web/canvas", "canvas", "서버 테스트")
+    recent = "\n".join([*context.recent_messages, context.content]).lower()
+    cues = ("30초 코인", "coin arena", "web/canvas", "canvas", "서버 테스트", "작은 게임", "작은게임")
     if not any(cue in recent for cue in cues):
         return None
     return OwnerToolCall(
@@ -222,18 +245,21 @@ def ensure_bootstrap_task(api: GameCompanyApiClient) -> dict[str, Any]:
     projects = api.list_projects()
     project = find_project_by_name(projects, BOOTSTRAP_PROJECT_NAME)
     created_project = False
+    configured_project = False
+    project_config = bootstrap_project_config()
     if project is None:
         project = api.create_project(
             {
                 "name": BOOTSTRAP_PROJECT_NAME,
                 "description": "Tiny Web/Canvas 30-second coin arena used to validate the AI Game Company server loop.",
-                "engine": "Web/Canvas",
-                "repo_url": "",
-                "workspace_path": "",
-                "base_branch": "main",
+                **project_config,
             }
         )
         created_project = True
+        configured_project = project_has_worker_config(project)
+    elif not project_has_worker_config(project) and project_has_worker_config(project_config):
+        project = api.update_project_config(project["id"], project_config)
+        configured_project = True
 
     tree = api.get_project_tree(project["id"])
     existing_task = find_tree_task(tree, BOOTSTRAP_TASK_BRANCH)
@@ -242,6 +268,7 @@ def ensure_bootstrap_task(api: GameCompanyApiClient) -> dict[str, Any]:
             "project": project,
             "task": existing_task,
             "created_project": created_project,
+            "configured_project": configured_project,
             "created_task": False,
             "thread_reference": None,
         }
@@ -306,6 +333,7 @@ def ensure_bootstrap_task(api: GameCompanyApiClient) -> dict[str, Any]:
         "project": project,
         "task": task,
         "created_project": created_project,
+        "configured_project": configured_project,
         "created_task": True,
         "thread_reference": None,
     }
@@ -395,6 +423,66 @@ def existing_bootstrap_thread_reference(api: GameCompanyApiClient, task_id: int)
         "reason": "existing_thread_reference_without_url",
         "thread_id": ref.get("thread_id"),
         "thread_reference": ref,
+    }
+
+
+def start_workspace_worker_for_task(
+    *,
+    server: str,
+    task_id: int,
+    server_repo: str,
+    runs_dir: str,
+    worker_id: str,
+    push: bool,
+) -> dict[str, Any]:
+    repo_path = Path(server_repo).resolve()
+    log_dir = Path(os.getenv("GAME_COMPANY_DISCORD_WORKER_LOG_DIR", "logs/discord-workers")).resolve()
+    log_dir.mkdir(parents=True, exist_ok=True)
+    log_path = log_dir / f"task-{task_id}.log"
+    argv = [
+        sys.executable,
+        "-m",
+        "app.worker_supervisor",
+        "--server",
+        server,
+        "--worker-id",
+        worker_id,
+        "--role",
+        "code_worker",
+        "--task-id",
+        str(task_id),
+        "--runs-dir",
+        runs_dir,
+        "--server-repo",
+        str(repo_path),
+    ]
+    if push:
+        argv.append("--push")
+
+    flags = 0
+    if os.name == "nt":
+        flags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+    log_file = log_path.open("ab")
+    try:
+        process = subprocess.Popen(
+            argv,
+            cwd=repo_path,
+            stdout=log_file,
+            stderr=subprocess.STDOUT,
+            stdin=subprocess.DEVNULL,
+            creationflags=flags,
+            close_fds=False if os.name == "nt" else True,
+        )
+    except Exception:
+        log_file.close()
+        raise
+    log_file.close()
+    return {
+        "started": True,
+        "pid": process.pid,
+        "task_id": task_id,
+        "worker_id": worker_id,
+        "log_path": str(log_path),
     }
 
 
@@ -527,13 +615,25 @@ def format_gateway_reply(action: DiscordBotAction) -> str | None:
                 thread_line = f"이미 연결된 스레드가 있어: {thread.get('thread_url')}"
             else:
                 thread_line = f"스레드는 아직 못 만들었어: {thread.get('reason', 'unknown')}"
+            if project_has_worker_config(project):
+                config_line = "프로젝트 Git workspace 설정: 준비됨"
+            else:
+                config_line = "프로젝트 Git workspace 설정: 없음. repo_url/workspace_path를 설정해야 워커가 가져갈 수 있어."
+            worker = result.get("worker")
+            if not worker:
+                worker_line = "워커 자동 시작: 꺼짐. 별도 Worker Runner를 켜야 작업을 가져가."
+            elif worker.get("started"):
+                worker_line = f"워커 자동 시작: 시작됨 (pid {worker.get('pid')}, log {worker.get('log_path')})"
+            else:
+                worker_line = f"워커 자동 시작: 건너뜀 ({worker.get('reason', 'unknown')})"
             return (
                 "좋아, 말만 한 게 아니라 서버에 첫 작업을 실제로 만들었어.\n\n"
                 f"프로젝트: {project['name']} (#{project['id']})\n"
                 f"태스크: #{task['id']} {BOOTSTRAP_TASK_TITLE}\n"
                 f"브랜치: {task['branch']}\n"
-                f"{thread_line}\n\n"
-                "이제 워커가 lease하면 이 작업부터 가져갈 수 있어."
+                f"{thread_line}\n"
+                f"{config_line}\n"
+                f"{worker_line}"
             )
         if action.owner_run_result:
             return format_owner_run_result(action.owner_run_result)
@@ -560,6 +660,11 @@ async def handle_discord_message(
     execute_owner_run: bool = False,
     check_context_for_owner: bool = True,
     reply_unmapped: bool = False,
+    auto_start_worker: bool = False,
+    worker_server_repo: str | None = None,
+    worker_runs_dir: str | None = None,
+    worker_id: str = "codex-workspace-1",
+    worker_push: bool = False,
 ) -> DiscordBotAction | None:
     if should_ignore_message(message):
         return None
@@ -580,6 +685,30 @@ async def handle_discord_message(
         tool_call = detect_owner_tool_call(context, action)
         if tool_call:
             operation_result = await run_owner_tool_call(message, api, tool_call)
+            if auto_start_worker:
+                task = operation_result.get("task") or {}
+                project = operation_result.get("project") or {}
+                if not project_has_worker_config(project):
+                    operation_result["worker"] = {
+                        "started": False,
+                        "reason": "project_missing_repo_url_or_workspace_path",
+                    }
+                else:
+                    try:
+                        operation_result["worker"] = await asyncio.to_thread(
+                            start_workspace_worker_for_task,
+                            server=api.server,
+                            task_id=int(task["id"]),
+                            server_repo=worker_server_repo or os.getcwd(),
+                            runs_dir=worker_runs_dir or os.getenv("GAME_COMPANY_WORKSPACE_RUNS_DIR", "./runs"),
+                            worker_id=worker_id,
+                            push=worker_push,
+                        )
+                    except Exception as exc:
+                        operation_result["worker"] = {
+                            "started": False,
+                            "reason": f"worker_start_failed: {exc}",
+                        }
             action = replace(action, operation_result=operation_result)
         return action
 
@@ -620,6 +749,33 @@ def parse_args() -> argparse.Namespace:
         help="Do not call context-status automatically for Owner-routed messages.",
     )
     parser.add_argument("--reply-unmapped", action="store_true", help="Reply when a Discord location is unmapped.")
+    parser.add_argument(
+        "--auto-start-worker",
+        action="store_true",
+        default=env_flag("GAME_COMPANY_DISCORD_AUTO_START_WORKER", False),
+        help="Start one workspace worker process for a newly created Discord task thread.",
+    )
+    parser.add_argument(
+        "--worker-server-repo",
+        default=os.getenv("GAME_COMPANY_SERVER_REPO", os.getcwd()),
+        help="Server repository path used as cwd for the spawned workspace worker.",
+    )
+    parser.add_argument(
+        "--worker-runs-dir",
+        default=os.getenv("GAME_COMPANY_WORKSPACE_RUNS_DIR", "./runs"),
+        help="Runs directory passed to the spawned workspace worker.",
+    )
+    parser.add_argument(
+        "--worker-id",
+        default=os.getenv("GAME_COMPANY_WORKSPACE_SUPERVISOR_WORKER_ID", "codex-workspace-1"),
+        help="Worker id used by the spawned workspace worker.",
+    )
+    parser.add_argument(
+        "--worker-push",
+        action="store_true",
+        default=env_flag("GAME_COMPANY_WORKSPACE_PUSH", False),
+        help="Push the worker branch after the spawned workspace worker commits.",
+    )
     return parser.parse_args()
 
 
@@ -655,6 +811,11 @@ def main() -> int:
                 execute_owner_run=args.execute_owner_run,
                 check_context_for_owner=not args.no_context_check_for_owner,
                 reply_unmapped=args.reply_unmapped,
+                auto_start_worker=args.auto_start_worker,
+                worker_server_repo=args.worker_server_repo,
+                worker_runs_dir=args.worker_runs_dir,
+                worker_id=args.worker_id,
+                worker_push=args.worker_push,
             )
             if action:
                 print(asdict(action), flush=True)

@@ -118,6 +118,12 @@ class GameCompanyApiClient:
             response.raise_for_status()
             return response.json()
 
+    def update_project_config(self, project_id: int, payload: dict[str, Any]) -> dict[str, Any]:
+        with httpx.Client(timeout=15) as client:
+            response = client.patch(f"{self.server}/projects/{project_id}/config", json=payload, headers=self.headers())
+            response.raise_for_status()
+            return response.json()
+
     def get_project_tree(self, project_id: int) -> dict[str, Any]:
         with httpx.Client(timeout=15) as client:
             response = client.get(f"{self.server}/projects/{project_id}/tree", headers=self.headers())

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 
+import app.discord_gateway as gateway_module
 from app.discord_gateway import (
     collect_recent_discord_messages,
     discord_message_to_context,
@@ -75,6 +76,7 @@ class FakeThread:
 
 class FakeApi:
     def __init__(self, mappings: list[dict], pending_approvals: list[dict] | None = None):
+        self.server = "http://127.0.0.1:8080"
         self.mappings = mappings
         self.pending_approvals = pending_approvals if pending_approvals is not None else []
         self.context_payloads: list[tuple[str, dict]] = []
@@ -122,6 +124,14 @@ class FakeApi:
         self.projects.append(project)
         self.trees[project["id"]] = {**project, "epics": []}
         return project
+
+    def update_project_config(self, project_id: int, payload: dict):
+        for project in self.projects:
+            if project["id"] == project_id:
+                project.update(payload)
+                self.trees[project_id].update(payload)
+                return project
+        raise KeyError("project not found")
 
     def get_project_tree(self, project_id: int):
         return self.trees[project_id]
@@ -405,6 +415,69 @@ def test_handle_discord_message_start_creates_bootstrap_task_and_thread() -> Non
     assert channel.created_threads[0].name.startswith("Task-")
     assert "Branch: worker/canvas-client-bootstrap" in channel.created_threads[0].sent[0]
     assert "말만 한 게 아니라 서버에 첫 작업을 실제로 만들었어" in channel.sent[0]
+    assert "프로젝트 Git workspace 설정: 없음" in channel.sent[0]
+    assert "워커 자동 시작: 꺼짐" in channel.sent[0]
+
+
+def test_handle_discord_message_start_updates_project_config_and_starts_worker(monkeypatch) -> None:
+    channel = FakeChannel(
+        "channel-1",
+        history_messages=[
+            fake_message("Web/Canvas 기반 30초 코인 아레나로 시작하자", bot=True, name="OwnerBot"),
+        ],
+    )
+    message = fake_message("시작해줘", channel, name="sonyeongha")
+    api = FakeApi(
+        [
+            {
+                "mapping_id": "mapping-1",
+                "discord_guild_id": "guild-1",
+                "discord_channel_id": "channel-1",
+                "discord_thread_id": "",
+                "conversation_kind": "owner_room",
+                "thread_role": "owner-design",
+                "project_id": None,
+                "archived_at": None,
+            }
+        ]
+    )
+    calls = []
+
+    def fake_start_worker(**kwargs):
+        calls.append(kwargs)
+        return {
+            "started": True,
+            "pid": 1234,
+            "task_id": kwargs["task_id"],
+            "worker_id": kwargs["worker_id"],
+            "log_path": "logs/discord-workers/task.log",
+        }
+
+    monkeypatch.setenv("GAME_COMPANY_BOOTSTRAP_REPO_URL", "C:/tmp/coin-arena-remote.git")
+    monkeypatch.setenv("GAME_COMPANY_BOOTSTRAP_WORKSPACE_PATH", "C:/tmp/coin-arena")
+    monkeypatch.setattr(gateway_module, "start_workspace_worker_for_task", fake_start_worker)
+
+    action = asyncio.run(
+        handle_discord_message(
+            message,
+            api,
+            submit_owner_run=True,
+            execute_owner_run=True,
+            auto_start_worker=True,
+            worker_server_repo="C:/server",
+            worker_runs_dir="C:/runs",
+            worker_id="worker-bot-1",
+            worker_push=True,
+        )
+    )
+
+    assert action.operation_result["project"]["repo_url"] == "C:/tmp/coin-arena-remote.git"
+    assert action.operation_result["project"]["workspace_path"] == "C:/tmp/coin-arena"
+    assert calls[0]["task_id"] == api.created_tasks[0]["id"]
+    assert calls[0]["worker_id"] == "worker-bot-1"
+    assert calls[0]["push"] is True
+    assert "프로젝트 Git workspace 설정: 준비됨" in channel.sent[0]
+    assert "워커 자동 시작: 시작됨" in channel.sent[0]
 
 
 def test_handle_discord_message_start_reuses_existing_bootstrap_task() -> None:

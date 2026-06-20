@@ -20,6 +20,7 @@ def make_args(tmp_path: Path) -> argparse.Namespace:
         role="code_worker",
         lease_minutes=60,
         runs_dir=str(tmp_path / "runs"),
+        task_id=0,
         server_repo=str(tmp_path),
         push=True,
         allow_dirty=False,
@@ -66,6 +67,16 @@ def test_build_workspace_worker_argv_includes_report_and_push(tmp_path: Path) ->
     assert argv[argv.index("--command") + 1] == "codex exec - < prompt.md"
     assert "--report" in argv
     assert "--push" in argv
+
+
+def test_build_workspace_worker_argv_can_target_specific_task(tmp_path: Path) -> None:
+    args = make_args(tmp_path)
+    args.task_id = 42
+
+    argv = build_workspace_worker_argv(args, "codex exec - < prompt.md")
+
+    assert "--task-id" in argv
+    assert argv[argv.index("--task-id") + 1] == "42"
 
 
 def test_run_supervisor_once_executes_workspace_worker(monkeypatch, tmp_path: Path) -> None:

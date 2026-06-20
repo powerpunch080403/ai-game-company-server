@@ -65,6 +65,8 @@ def build_workspace_worker_argv(args: argparse.Namespace, command: str) -> list[
         command,
         "--report",
     ]
+    if args.task_id:
+        argv.extend(["--task-id", str(args.task_id)])
     if args.push:
         argv.append("--push")
     if args.allow_dirty:
@@ -107,6 +109,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--role", default="code_worker", choices=["code_worker", "image_worker", "voice_worker", "test_runner"])
     parser.add_argument("--lease-minutes", type=int, default=int(os.getenv("GAME_COMPANY_WORKSPACE_LEASE_MINUTES", "60")))
     parser.add_argument("--runs-dir", default=os.getenv("GAME_COMPANY_WORKSPACE_RUNS_DIR", "./runs"))
+    parser.add_argument("--task-id", type=int, default=0, help="Claim and run a specific task instead of leasing the next task.")
     parser.add_argument("--server-repo", default=os.getenv("GAME_COMPANY_SERVER_REPO", os.getcwd()))
     parser.add_argument("--push", action="store_true", default=os.getenv("GAME_COMPANY_WORKSPACE_PUSH", "0") == "1")
     parser.add_argument("--allow-dirty", action="store_true")
