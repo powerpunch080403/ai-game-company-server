@@ -394,11 +394,14 @@ def test_handle_discord_message_start_creates_bootstrap_task_and_thread() -> Non
 
     action = asyncio.run(handle_discord_message(message, api, submit_owner_run=True, execute_owner_run=True))
 
-    assert action.operation_result["kind"] == "bootstrap_task_created"
+    assert action.operation_result["kind"] == "owner_tool_executed"
+    assert action.operation_result["tool_name"] == "create_coin_arena_bootstrap_task"
     assert api.projects[0]["name"] == "Coin Arena Server Test"
     assert api.created_tasks[0]["branch"] == "worker/canvas-client-bootstrap"
     assert api.thread_refs[0][0] == api.created_tasks[0]["id"]
     assert api.discord_mappings[0]["discord_thread_id"] == "thread-1"
+    assert api.discord_mappings[0]["conversation_kind"] == "ai_internal"
+    assert api.discord_mappings[0]["thread_role"] == "ai-internal-task"
     assert channel.created_threads[0].name.startswith("Task-")
     assert "Branch: worker/canvas-client-bootstrap" in channel.created_threads[0].sent[0]
     assert "말만 한 게 아니라 서버에 첫 작업을 실제로 만들었어" in channel.sent[0]
@@ -454,6 +457,8 @@ def test_handle_discord_message_start_reuses_existing_bootstrap_task() -> None:
 
     action = asyncio.run(handle_discord_message(message, api, submit_owner_run=True, execute_owner_run=True))
 
+    assert action.operation_result["kind"] == "owner_tool_executed"
+    assert action.operation_result["tool_name"] == "create_coin_arena_bootstrap_task"
     assert action.operation_result["created_task"] is False
     assert len(api.created_tasks) == 1
     assert channel.created_threads == []
@@ -512,6 +517,8 @@ def test_handle_discord_message_recreates_deleted_bootstrap_thread() -> None:
 
     action = asyncio.run(handle_discord_message(message, api, submit_owner_run=True, execute_owner_run=True))
 
+    assert action.operation_result["kind"] == "owner_tool_executed"
+    assert action.operation_result["tool_name"] == "create_coin_arena_bootstrap_task"
     assert action.operation_result["created_task"] is False
     assert action.operation_result["thread"]["created"] is True
     assert len(api.created_tasks) == 1

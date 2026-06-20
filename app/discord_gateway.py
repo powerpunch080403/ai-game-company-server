@@ -4,7 +4,7 @@ import argparse
 import asyncio
 import os
 import traceback
-from dataclasses import asdict, replace
+from dataclasses import asdict, dataclass, replace
 from typing import Any
 
 from dotenv import load_dotenv
@@ -153,15 +153,32 @@ BOOTSTRAP_TASK_BRANCH = "worker/canvas-client-bootstrap"
 BOOTSTRAP_TASK_TITLE = "Canvas client bootstrap"
 
 
-def should_create_bootstrap_task(context: DiscordMessageContext, action: DiscordBotAction) -> bool:
+@dataclass(frozen=True)
+class OwnerToolCall:
+    name: str
+    reason: str
+    recreate_thread: bool = False
+
+
+def detect_owner_tool_call(context: DiscordMessageContext, action: DiscordBotAction) -> OwnerToolCall | None:
     if not action.needs_owner:
-        return False
+        return None
     normalized = context.content.replace(" ", "").lower()
     if not any(keyword in normalized for keyword in ("시작", "계속진행", "진행해", "start")):
-        return False
+        return None
     recent = "\n".join(context.recent_messages).lower()
     cues = ("30초 코인", "coin arena", "web/canvas", "canvas", "서버 테스트")
-    return any(cue in recent for cue in cues)
+    if not any(cue in recent for cue in cues):
+        return None
+    return OwnerToolCall(
+        name="create_coin_arena_bootstrap_task",
+        reason="Owner conversation approved the Web/Canvas coin arena bootstrap task.",
+        recreate_thread=should_recreate_bootstrap_thread(context),
+    )
+
+
+def should_create_bootstrap_task(context: DiscordMessageContext, action: DiscordBotAction) -> bool:
+    return detect_owner_tool_call(context, action) is not None
 
 
 def should_recreate_bootstrap_thread(context: DiscordMessageContext) -> bool:
@@ -346,8 +363,8 @@ async def create_task_thread_for_bootstrap(message: Any, api: GameCompanyApiClie
             "discord_channel_id": parent_id,
             "discord_thread_id": thread_id,
             "project_id": project["id"],
-            "conversation_kind": "project",
-            "thread_role": "owner-tasks",
+            "conversation_kind": "ai_internal",
+            "thread_role": "ai-internal-task",
             "created_by": "discord_gateway",
             "notes": f"Task thread for task #{task['id']}.",
         }
@@ -378,6 +395,36 @@ def existing_bootstrap_thread_reference(api: GameCompanyApiClient, task_id: int)
         "reason": "existing_thread_reference_without_url",
         "thread_id": ref.get("thread_id"),
         "thread_reference": ref,
+    }
+
+
+async def run_owner_tool_call(message: Any, api: GameCompanyApiClient, tool_call: OwnerToolCall) -> dict[str, Any]:
+    if tool_call.name != "create_coin_arena_bootstrap_task":
+        return {
+            "kind": "owner_tool_executed",
+            "tool_name": tool_call.name,
+            "created": False,
+            "reason": "unknown_owner_tool",
+        }
+
+    task_result = await asyncio.to_thread(ensure_bootstrap_task, api)
+    thread_result = await asyncio.to_thread(
+        existing_bootstrap_thread_reference,
+        api,
+        task_result["task"]["id"],
+    )
+    if (
+        task_result.get("created_task")
+        or tool_call.recreate_thread
+        or thread_result.get("reason") == "missing_thread_reference"
+    ):
+        thread_result = await create_task_thread_for_bootstrap(message, api, task_result)
+    return {
+        "kind": "owner_tool_executed",
+        "tool_name": tool_call.name,
+        "reason": tool_call.reason,
+        **task_result,
+        "thread": thread_result,
     }
 
 
@@ -465,7 +512,11 @@ def format_gateway_reply(action: DiscordBotAction) -> str | None:
             return f"결재 건 #{res.get('approval_id')} '{req_summary}'이(가) 성공적으로 {status_kor} 처리되었습니다."
     if action.needs_owner:
         operation_result = getattr(action, "operation_result", None)
-        if operation_result and operation_result.get("kind") == "bootstrap_task_created":
+        if (
+            operation_result
+            and operation_result.get("kind") == "owner_tool_executed"
+            and operation_result.get("tool_name") == "create_coin_arena_bootstrap_task"
+        ):
             result = operation_result
             task = result["task"]
             project = result["project"]
@@ -526,21 +577,9 @@ async def handle_discord_message(
             execute_owner_run,
             check_context_for_owner,
         )
-        if should_create_bootstrap_task(context, action):
-            task_result = await asyncio.to_thread(ensure_bootstrap_task, api)
-            recreate_thread = should_recreate_bootstrap_thread(context)
-            thread_result = await asyncio.to_thread(
-                existing_bootstrap_thread_reference,
-                api,
-                task_result["task"]["id"],
-            )
-            if task_result.get("created_task") or recreate_thread or thread_result.get("reason") == "missing_thread_reference":
-                thread_result = await create_task_thread_for_bootstrap(message, api, task_result)
-            operation_result = {
-                "kind": "bootstrap_task_created",
-                **task_result,
-                "thread": thread_result,
-            }
+        tool_call = detect_owner_tool_call(context, action)
+        if tool_call:
+            operation_result = await run_owner_tool_call(message, api, tool_call)
             action = replace(action, operation_result=operation_result)
         return action
 
