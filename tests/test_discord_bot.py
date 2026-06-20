@@ -3,6 +3,7 @@ from __future__ import annotations
 from app.discord_bot import (
     DiscordBotAction,
     DiscordMessageContext,
+    GameCompanyApiClient,
     attach_context_status,
     attach_owner_run_payload,
     attach_owner_run_result,
@@ -12,6 +13,28 @@ from app.discord_bot import (
     route_discord_message,
     select_mapping,
 )
+
+
+def test_api_client_from_env_uses_owner_run_timeout(monkeypatch) -> None:
+    monkeypatch.setenv("GAME_COMPANY_SERVER", "http://server.test")
+    monkeypatch.setenv("GAME_COMPANY_DISCORD_OWNER_RUN_TIMEOUT_SECONDS", "123")
+    monkeypatch.delenv("GAME_COMPANY_DISCORD_SERVER_TOKEN", raising=False)
+    monkeypatch.delenv("GAME_COMPANY_OWNER_TOKEN", raising=False)
+    monkeypatch.delenv("GAME_COMPANY_API_TOKEN", raising=False)
+
+    client = GameCompanyApiClient.from_env()
+
+    assert client.server == "http://server.test"
+    assert client.owner_run_timeout_seconds == 123
+
+
+def test_api_client_from_env_falls_back_to_owner_timeout(monkeypatch) -> None:
+    monkeypatch.delenv("GAME_COMPANY_DISCORD_OWNER_RUN_TIMEOUT_SECONDS", raising=False)
+    monkeypatch.setenv("GAME_COMPANY_OWNER_TIMEOUT_SECONDS", "456")
+
+    client = GameCompanyApiClient.from_env()
+
+    assert client.owner_run_timeout_seconds == 456
 
 
 def test_select_mapping_prefers_exact_thread() -> None:

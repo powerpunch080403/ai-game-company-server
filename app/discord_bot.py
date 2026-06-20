@@ -37,10 +37,21 @@ class DiscordBotAction:
     approval_result: dict[str, Any] | None = None
 
 
+def env_int(name: str, default: int) -> int:
+    raw = os.getenv(name)
+    if not raw:
+        return default
+    try:
+        return int(raw)
+    except ValueError:
+        return default
+
+
 class GameCompanyApiClient:
-    def __init__(self, server: str, token: str = ""):
+    def __init__(self, server: str, token: str = "", owner_run_timeout_seconds: int = 900):
         self.server = server.rstrip("/")
         self.token = token
+        self.owner_run_timeout_seconds = owner_run_timeout_seconds
 
     @classmethod
     def from_env(cls) -> GameCompanyApiClient:
@@ -50,7 +61,15 @@ class GameCompanyApiClient:
             or os.getenv("GAME_COMPANY_API_TOKEN")
             or ""
         )
-        return cls(os.getenv("GAME_COMPANY_SERVER", "http://127.0.0.1:8080"), token)
+        owner_run_timeout_seconds = env_int(
+            "GAME_COMPANY_DISCORD_OWNER_RUN_TIMEOUT_SECONDS",
+            env_int("GAME_COMPANY_OWNER_TIMEOUT_SECONDS", 900),
+        )
+        return cls(
+            os.getenv("GAME_COMPANY_SERVER", "http://127.0.0.1:8080"),
+            token,
+            owner_run_timeout_seconds=owner_run_timeout_seconds,
+        )
 
     def headers(self) -> dict[str, str]:
         if not self.token:
@@ -80,7 +99,7 @@ class GameCompanyApiClient:
             return response.json()
 
     def create_owner_run(self, payload: dict[str, Any]) -> dict[str, Any]:
-        with httpx.Client(timeout=30) as client:
+        with httpx.Client(timeout=self.owner_run_timeout_seconds) as client:
             response = client.post(f"{self.server}/owner/runs", json=payload, headers=self.headers())
             response.raise_for_status()
             return response.json()
