@@ -21,9 +21,22 @@ class FakeChannel:
         self.id = channel_id
         self.parent_id = parent_id
         self.sent: list[str] = []
+        self.typing_entered = 0
 
     async def send(self, content: str) -> None:
         self.sent.append(content)
+
+    def typing(self):
+        channel = self
+
+        class FakeTyping:
+            async def __aenter__(self):
+                channel.typing_entered += 1
+
+            async def __aexit__(self, exc_type, exc, tb):
+                return False
+
+        return FakeTyping()
 
 
 class FakeApi:
@@ -206,6 +219,39 @@ def test_handle_discord_message_sends_reply() -> None:
 
     assert action.action_type == "context_status_check"
     assert channel.sent == ["Context: ok (1200/260000 estimated tokens)."]
+    assert channel.typing_entered == 1
+
+
+def test_handle_discord_message_splits_long_replies() -> None:
+    channel = FakeChannel("channel-1")
+    message = fake_message("hello", channel)
+
+    class LongReplyApi(FakeApi):
+        def create_owner_run(self, payload: dict):
+            self.owner_payloads.append(payload)
+            return {"id": 10, "status": "success", "stdout": "x" * 4100}
+
+    api = LongReplyApi(
+        [
+            {
+                "mapping_id": "mapping-1",
+                "discord_guild_id": "guild-1",
+                "discord_channel_id": "channel-1",
+                "discord_thread_id": "",
+                "conversation_kind": "owner_room",
+                "thread_role": "owner-design",
+                "project_id": None,
+                "archived_at": None,
+            }
+        ]
+    )
+
+    action = asyncio.run(handle_discord_message(message, api, submit_owner_run=True, execute_owner_run=True))
+
+    assert action.action_type == "owner_room_message"
+    assert len(channel.sent) == 1
+    assert len(channel.sent[0]) <= 1900
+    assert channel.sent[0].endswith("[truncated]")
 
 
 def test_handle_gateway_message_routes_approval_and_decides_approved() -> None:

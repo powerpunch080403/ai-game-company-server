@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import os
+import traceback
 from dataclasses import asdict, replace
 from typing import Any
 
@@ -203,6 +204,12 @@ def format_gateway_reply(action: DiscordBotAction) -> str | None:
     return None
 
 
+async def send_discord_reply(channel: Any, reply: str, chunk_size: int = 1900) -> None:
+    chunks = [reply[i : i + chunk_size] for i in range(0, len(reply), chunk_size)] or [reply]
+    for chunk in chunks:
+        await channel.send(chunk)
+
+
 async def handle_discord_message(
     message: Any,
     api: GameCompanyApiClient,
@@ -213,20 +220,31 @@ async def handle_discord_message(
 ) -> DiscordBotAction | None:
     if should_ignore_message(message):
         return None
-    context = discord_message_to_context(message)
-    action = await asyncio.to_thread(
-        handle_gateway_message,
-        context,
-        api,
-        submit_owner_run,
-        execute_owner_run,
-        check_context_for_owner,
-    )
+    channel = getattr(message, "channel", None)
+    typing = getattr(channel, "typing", None)
+
+    async def process_message() -> DiscordBotAction:
+        context = discord_message_to_context(message)
+        return await asyncio.to_thread(
+            handle_gateway_message,
+            context,
+            api,
+            submit_owner_run,
+            execute_owner_run,
+            check_context_for_owner,
+        )
+
+    if callable(typing):
+        async with typing():
+            action = await process_message()
+    else:
+        action = await process_message()
+
     reply = format_gateway_reply(action)
     if reply is None and action.action_type == "unmapped_context" and reply_unmapped:
         reply = "This Discord channel/thread is not mapped yet."
     if reply:
-        await message.channel.send(reply)
+        await send_discord_reply(message.channel, reply)
     return action
 
 
@@ -284,6 +302,7 @@ def main() -> int:
                 print(asdict(action))
         except Exception as exc:
             print(f"Discord message handling failed: {exc}")
+            print(traceback.format_exc())
             try:
                 await message.channel.send("Message handling failed. Check server logs.")
             except Exception:
