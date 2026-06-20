@@ -19,6 +19,7 @@ class DiscordMessageContext:
     thread_id: str = ""
     author_id: str = ""
     content: str = ""
+    recent_messages: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -143,8 +144,9 @@ def context_status_payload(
     archive_mapping: bool = False,
     continuation_discord_thread_id: str | None = None,
 ) -> dict[str, Any]:
+    recent_messages = list(context.recent_messages) if context.recent_messages else [context.content]
     payload: dict[str, Any] = {
-        "recent_messages": [context.content] if context.content else [],
+        "recent_messages": [item for item in recent_messages if item],
         "estimated_extra_tokens": estimated_extra_tokens,
         "auto_compact": auto_compact,
         "compact_summary": compact_summary,
@@ -190,10 +192,18 @@ def build_owner_run_payload(
         context_lines.append(f"Summary memory key: {summary_memory_key}")
     if action.context_status:
         context_lines.append(f"Context status: {json.dumps(action.context_status, ensure_ascii=False)}")
+    if context.recent_messages:
+        context_lines.extend(
+            [
+                "",
+                "Recent Discord conversation, oldest to newest:",
+                *context.recent_messages,
+            ]
+        )
     context_lines.extend(
         [
             "",
-            "User message:",
+            "Current user message:",
             objective,
         ]
     )

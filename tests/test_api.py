@@ -1105,7 +1105,7 @@ def test_owner_run_dry_run_records_prompt(client: TestClient) -> None:
     assert body["status"] == "dry_run"
     assert "Break combat system" in body["prompt"]
     assert "No game engine selected yet." in body["prompt"]
-    assert "Return exactly these sections" in body["prompt"]
+    assert "return exactly these sections" in body["prompt"]
     assert "user_questions" in body["prompt"]
     assert "workspace task branches must start with worker/" in body["prompt"]
     assert "project engine may stay undecided" in body["prompt"]
@@ -4550,5 +4550,4 @@ def test_format_task_report_thread_message_is_deterministic() -> None:
     assert "Changed files:\n- src/main.py\n- tests/test_main.py" in msg
     assert "Merge candidate:\nqueued" in msg
     assert "Notes:\nNone" in msg
-
 

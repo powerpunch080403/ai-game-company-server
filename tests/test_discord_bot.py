@@ -233,6 +233,19 @@ def test_context_status_payload_uses_message_and_thresholds() -> None:
     assert payload["continuation_discord_thread_id"] == "thread-2"
 
 
+def test_context_status_payload_uses_recent_discord_messages() -> None:
+    payload = context_status_payload(
+        DiscordMessageContext(
+            guild_id="guild-1",
+            channel_id="channel-1",
+            content="1번",
+            recent_messages=("Bot Owner: 1. Web/Canvas", "user-1: 1번"),
+        )
+    )
+
+    assert payload["recent_messages"] == ["Bot Owner: 1. Web/Canvas", "user-1: 1번"]
+
+
 def test_attach_context_status_returns_action_with_status() -> None:
     action = DiscordBotAction(action_type="context_status_check", summary="check", mapping_id="mapping-1")
 
@@ -269,6 +282,32 @@ def test_build_owner_run_payload_for_project_owner_message() -> None:
     assert "Project id: 7" in payload["context"]
     assert "Summary memory key: project:7:thread:thread-1:summary:current" in payload["context"]
     assert '"status": "ok"' in payload["context"]
+
+
+def test_build_owner_run_payload_includes_recent_discord_conversation() -> None:
+    context = DiscordMessageContext(
+        guild_id="guild-1",
+        channel_id="channel-1",
+        author_id="user-1",
+        content="1번",
+        recent_messages=(
+            "Bot Owner: 선택지: 1. Web/Canvas 2. Godot 3. Unity",
+            "sonyeongha: 1번",
+        ),
+    )
+    mapping = {
+        "mapping_id": "mapping-1",
+        "conversation_kind": "owner_room",
+        "thread_role": "owner-design",
+    }
+    action = route_discord_message(context, mapping)
+
+    payload = build_owner_run_payload(context, mapping, action)
+
+    assert payload["objective"] == "1번"
+    assert "Recent Discord conversation, oldest to newest:" in payload["context"]
+    assert "Bot Owner: 선택지: 1. Web/Canvas 2. Godot 3. Unity" in payload["context"]
+    assert "Current user message:\n1번" in payload["context"]
 
 
 def test_attach_owner_run_payload_only_for_owner_actions() -> None:

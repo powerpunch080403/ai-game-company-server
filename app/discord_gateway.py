@@ -31,7 +31,7 @@ def snowflake(value: Any) -> str:
     return str(value)
 
 
-def discord_message_to_context(message: Any) -> DiscordMessageContext:
+def discord_message_to_context(message: Any, recent_messages: tuple[str, ...] | None = None) -> DiscordMessageContext:
     guild = getattr(message, "guild", None)
     channel = getattr(message, "channel", None)
     author = getattr(message, "author", None)
@@ -48,7 +48,44 @@ def discord_message_to_context(message: Any) -> DiscordMessageContext:
         thread_id=thread_id,
         author_id=snowflake(getattr(author, "id", "")),
         content=str(getattr(message, "content", "") or ""),
+        recent_messages=recent_messages or (),
     )
+
+
+def format_history_message(message: Any) -> str:
+    author = getattr(message, "author", None)
+    author_name = (
+        getattr(author, "display_name", None)
+        or getattr(author, "name", None)
+        or snowflake(getattr(author, "id", "unknown"))
+    )
+    if bool(getattr(author, "bot", False)):
+        author_name = f"Bot {author_name}"
+    content = str(getattr(message, "clean_content", None) or getattr(message, "content", "") or "").strip()
+    attachments = []
+    for attachment in getattr(message, "attachments", []) or []:
+        filename = getattr(attachment, "filename", None) or getattr(attachment, "url", "attachment")
+        attachments.append(f"[attachment: {filename}]")
+    if attachments:
+        content = " ".join([content, *attachments]).strip()
+    return f"{author_name}: {content}" if content else ""
+
+
+async def collect_recent_discord_messages(message: Any, limit: int = 12) -> tuple[str, ...]:
+    channel = getattr(message, "channel", None)
+    history = getattr(channel, "history", None)
+    messages: list[Any] = []
+    if callable(history):
+        try:
+            async for item in history(limit=max(limit - 1, 0), before=message, oldest_first=False):
+                messages.append(item)
+        except Exception as exc:
+            print(f"Discord history read failed: {exc}", flush=True)
+            messages = []
+    messages.reverse()
+    messages.append(message)
+    lines = [format_history_message(item) for item in messages]
+    return tuple(line for line in lines if line)
 
 
 def should_ignore_message(message: Any) -> bool:
@@ -224,7 +261,8 @@ async def handle_discord_message(
     typing = getattr(channel, "typing", None)
 
     async def process_message() -> DiscordBotAction:
-        context = discord_message_to_context(message)
+        recent_messages = await collect_recent_discord_messages(message)
+        context = discord_message_to_context(message, recent_messages=recent_messages)
         return await asyncio.to_thread(
             handle_gateway_message,
             context,

@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 
 from app.discord_gateway import (
+    collect_recent_discord_messages,
     discord_message_to_context,
     format_gateway_reply,
     handle_discord_message,
@@ -17,15 +18,29 @@ class FakeObject:
 
 
 class FakeChannel:
-    def __init__(self, channel_id: str, parent_id: str | None = None, typing_fails: bool = False):
+    def __init__(
+        self,
+        channel_id: str,
+        parent_id: str | None = None,
+        typing_fails: bool = False,
+        history_messages: list[object] | None = None,
+    ):
         self.id = channel_id
         self.parent_id = parent_id
         self.sent: list[str] = []
         self.typing_entered = 0
         self.typing_fails = typing_fails
+        self.history_messages = history_messages or []
 
     async def send(self, content: str) -> None:
         self.sent.append(content)
+
+    async def history(self, limit: int, before=None, oldest_first: bool = False):
+        selected = self.history_messages[-limit:] if limit else []
+        if not oldest_first:
+            selected = list(reversed(selected))
+        for item in selected:
+            yield item
 
     def typing(self):
         channel = self
@@ -79,11 +94,17 @@ class FakeApi:
         }
 
 
-def fake_message(content: str, channel: FakeChannel | None = None, bot: bool = False):
+def fake_message(
+    content: str,
+    channel: FakeChannel | None = None,
+    bot: bool = False,
+    name: str = "user-1",
+    display_name: str | None = None,
+):
     return FakeObject(
         guild=FakeObject(id="guild-1"),
         channel=channel or FakeChannel("channel-1"),
-        author=FakeObject(id="user-1", bot=bot),
+        author=FakeObject(id="user-1", bot=bot, name=name, display_name=display_name or name),
         content=content,
     )
 
@@ -98,6 +119,25 @@ def test_discord_message_to_context_uses_parent_channel_for_threads() -> None:
     assert context.thread_id == "thread-1"
     assert context.author_id == "user-1"
     assert context.content == "hello"
+
+
+def test_collect_recent_discord_messages_includes_bot_context_and_current_message() -> None:
+    channel = FakeChannel(
+        "channel-1",
+        history_messages=[
+            fake_message("선택지: 1. Web/Canvas 2. Godot", bot=True, name="OwnerBot"),
+            fake_message("시작하자", name="sonyeongha"),
+        ],
+    )
+    message = fake_message("1번", channel, name="sonyeongha")
+
+    lines = asyncio.run(collect_recent_discord_messages(message))
+
+    assert lines == (
+        "Bot OwnerBot: 선택지: 1. Web/Canvas 2. Godot",
+        "sonyeongha: 시작하자",
+        "sonyeongha: 1번",
+    )
 
 
 def test_should_ignore_bot_dm_and_empty_messages() -> None:
@@ -223,6 +263,36 @@ def test_handle_discord_message_sends_reply() -> None:
     assert action.action_type == "context_status_check"
     assert channel.sent == ["Context: ok (1200/260000 estimated tokens)."]
     assert channel.typing_entered == 1
+
+
+def test_handle_discord_message_sends_recent_history_to_owner() -> None:
+    channel = FakeChannel(
+        "channel-1",
+        history_messages=[
+            fake_message("선택지: 1. Web/Canvas 2. Godot", bot=True, name="OwnerBot"),
+        ],
+    )
+    message = fake_message("1번", channel, name="sonyeongha")
+    api = FakeApi(
+        [
+            {
+                "mapping_id": "mapping-1",
+                "discord_guild_id": "guild-1",
+                "discord_channel_id": "channel-1",
+                "discord_thread_id": "",
+                "conversation_kind": "owner_room",
+                "thread_role": "owner-design",
+                "project_id": None,
+                "archived_at": None,
+            }
+        ]
+    )
+
+    action = asyncio.run(handle_discord_message(message, api, submit_owner_run=True, execute_owner_run=True))
+
+    assert action.action_type == "owner_room_message"
+    assert "Bot OwnerBot: 선택지: 1. Web/Canvas 2. Godot" in api.owner_payloads[0]["context"]
+    assert "sonyeongha: 1번" in api.owner_payloads[0]["context"]
 
 
 def test_handle_discord_message_splits_long_replies() -> None:
