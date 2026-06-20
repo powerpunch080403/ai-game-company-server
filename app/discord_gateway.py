@@ -164,6 +164,11 @@ def should_create_bootstrap_task(context: DiscordMessageContext, action: Discord
     return any(cue in recent for cue in cues)
 
 
+def should_recreate_bootstrap_thread(context: DiscordMessageContext) -> bool:
+    normalized = "\n".join([*context.recent_messages, context.content]).replace(" ", "").lower()
+    return any(keyword in normalized for keyword in ("삭제", "다시", "재생성", "스레드", "thread"))
+
+
 def find_project_by_name(projects: list[dict[str, Any]], name: str) -> dict[str, Any] | None:
     for project in projects:
         if project.get("name") == name:
@@ -356,6 +361,26 @@ async def create_task_thread_for_bootstrap(message: Any, api: GameCompanyApiClie
     }
 
 
+def existing_bootstrap_thread_reference(api: GameCompanyApiClient, task_id: int) -> dict[str, Any]:
+    ref = api.get_task_thread_reference(task_id)
+    if not ref:
+        return {"created": False, "reason": "missing_thread_reference"}
+    if ref.get("thread_url"):
+        return {
+            "created": False,
+            "reason": "existing_thread_reference",
+            "thread_id": ref.get("thread_id"),
+            "thread_url": ref.get("thread_url"),
+            "thread_reference": ref,
+        }
+    return {
+        "created": False,
+        "reason": "existing_thread_reference_without_url",
+        "thread_id": ref.get("thread_id"),
+        "thread_reference": ref,
+    }
+
+
 def format_context_status(status: dict[str, Any] | None) -> str:
     if not status:
         return ""
@@ -445,11 +470,12 @@ def format_gateway_reply(action: DiscordBotAction) -> str | None:
             task = result["task"]
             project = result["project"]
             thread = result.get("thread") or {}
-            thread_line = (
-                f"스레드도 만들었어: {thread.get('thread_url')}"
-                if thread.get("created") and thread.get("thread_url")
-                else f"스레드는 아직 못 만들었어: {thread.get('reason', 'unknown')}"
-            )
+            if thread.get("created") and thread.get("thread_url"):
+                thread_line = f"스레드도 만들었어: {thread.get('thread_url')}"
+            elif thread.get("thread_url"):
+                thread_line = f"이미 연결된 스레드가 있어: {thread.get('thread_url')}"
+            else:
+                thread_line = f"스레드는 아직 못 만들었어: {thread.get('reason', 'unknown')}"
             return (
                 "좋아, 말만 한 게 아니라 서버에 첫 작업을 실제로 만들었어.\n\n"
                 f"프로젝트: {project['name']} (#{project['id']})\n"
@@ -502,8 +528,13 @@ async def handle_discord_message(
         )
         if should_create_bootstrap_task(context, action):
             task_result = await asyncio.to_thread(ensure_bootstrap_task, api)
-            thread_result = {"created": False, "reason": "task_already_exists"}
-            if task_result.get("created_task"):
+            recreate_thread = should_recreate_bootstrap_thread(context)
+            thread_result = await asyncio.to_thread(
+                existing_bootstrap_thread_reference,
+                api,
+                task_result["task"]["id"],
+            )
+            if task_result.get("created_task") or recreate_thread or thread_result.get("reason") == "missing_thread_reference":
                 thread_result = await create_task_thread_for_bootstrap(message, api, task_result)
             operation_result = {
                 "kind": "bootstrap_task_created",

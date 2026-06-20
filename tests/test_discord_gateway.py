@@ -156,6 +156,12 @@ class FakeApi:
         self.thread_refs.append((task_id, payload))
         return ref
 
+    def get_task_thread_reference(self, task_id: int):
+        for ref_task_id, payload in reversed(self.thread_refs):
+            if ref_task_id == task_id:
+                return {"id": 1, "task_id": task_id, "project_id": 1, **payload}
+        return None
+
     def upsert_discord_mapping(self, payload: dict):
         mapping = {"mapping_id": f"mapping-{len(self.discord_mappings) + 1}", **payload}
         self.discord_mappings.append(mapping)
@@ -435,13 +441,83 @@ def test_handle_discord_message_start_reuses_existing_bootstrap_task() -> None:
             "branch": "worker/canvas-client-bootstrap",
         },
     )
+    api.upsert_task_thread_reference(
+        30,
+        {
+            "provider": "discord",
+            "channel_id": "channel-1",
+            "thread_id": "existing-thread",
+            "thread_url": "https://discord.test/existing-thread",
+            "title": "Canvas client bootstrap",
+        },
+    )
 
     action = asyncio.run(handle_discord_message(message, api, submit_owner_run=True, execute_owner_run=True))
 
     assert action.operation_result["created_task"] is False
     assert len(api.created_tasks) == 1
     assert channel.created_threads == []
+    assert action.operation_result["thread"]["reason"] == "existing_thread_reference"
     assert "태스크: #30" in channel.sent[0]
+    assert "이미 연결된 스레드가 있어" in channel.sent[0]
+
+
+def test_handle_discord_message_recreates_deleted_bootstrap_thread() -> None:
+    channel = FakeChannel(
+        "channel-1",
+        history_messages=[
+            fake_message("Web/Canvas 기반 30초 코인 아레나로 시작하자", bot=True, name="OwnerBot"),
+        ],
+    )
+    message = fake_message("삭제했어 다시 진행해봐", channel, name="sonyeongha")
+    api = FakeApi(
+        [
+            {
+                "mapping_id": "mapping-1",
+                "discord_guild_id": "guild-1",
+                "discord_channel_id": "channel-1",
+                "discord_thread_id": "",
+                "conversation_kind": "owner_room",
+                "thread_role": "owner-design",
+                "project_id": None,
+                "archived_at": None,
+            }
+        ]
+    )
+    project = api.create_project({"name": "Coin Arena Server Test", "description": "", "engine": "Web/Canvas"})
+    epic = api.create_epic(project["id"], {"name": "Project Bootstrap", "goal": ""})
+    sub_epic = api.create_sub_epic(epic["id"], {"name": "Canvas Client Bootstrap", "goal": ""})
+    api.create_task(
+        sub_epic["id"],
+        {
+            "role": "code_worker",
+            "goal": "existing",
+            "requirements": ["existing"],
+            "success_criteria": ["existing"],
+            "estimated_minutes": 15,
+            "memory_refs": [],
+            "branch": "worker/canvas-client-bootstrap",
+        },
+    )
+    api.upsert_task_thread_reference(
+        30,
+        {
+            "provider": "discord",
+            "channel_id": "channel-1",
+            "thread_id": "deleted-thread",
+            "thread_url": "https://discord.test/deleted-thread",
+            "title": "Canvas client bootstrap",
+        },
+    )
+
+    action = asyncio.run(handle_discord_message(message, api, submit_owner_run=True, execute_owner_run=True))
+
+    assert action.operation_result["created_task"] is False
+    assert action.operation_result["thread"]["created"] is True
+    assert len(api.created_tasks) == 1
+    assert len(channel.created_threads) == 1
+    assert api.thread_refs[-1][1]["thread_id"] == "thread-1"
+    assert "스레드도 만들었어" in channel.sent[0]
 
 
 def test_handle_discord_message_splits_long_replies() -> None:

@@ -148,6 +148,14 @@ class GameCompanyApiClient:
             response.raise_for_status()
             return response.json()
 
+    def get_task_thread_reference(self, task_id: int) -> dict[str, Any] | None:
+        with httpx.Client(timeout=15) as client:
+            response = client.get(f"{self.server}/tasks/{task_id}/thread-reference", headers=self.headers())
+            if response.status_code == 404:
+                return None
+            response.raise_for_status()
+            return response.json()
+
     def upsert_discord_mapping(self, payload: dict[str, Any]) -> dict[str, Any]:
         with httpx.Client(timeout=15) as client:
             response = client.post(f"{self.server}/discord/mappings", json=payload, headers=self.headers())
