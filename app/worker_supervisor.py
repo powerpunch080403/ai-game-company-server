@@ -42,7 +42,7 @@ def resolve_worker_command(args: argparse.Namespace) -> str:
     configured = os.getenv("GAME_COMPANY_WORKSPACE_WORKER_COMMAND", "").strip()
     if configured:
         return configured
-    prompt_file = write_default_codex_prompt(Path(args.runs_dir))
+    prompt_file = write_default_codex_prompt(Path(args.runs_dir).resolve())
     return f"codex exec --cd . --sandbox workspace-write - < {quote_shell_path(prompt_file)}"
 
 

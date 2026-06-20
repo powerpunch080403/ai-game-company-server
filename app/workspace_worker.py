@@ -156,7 +156,7 @@ def run_workspace_worker(args: argparse.Namespace) -> int:
         print("No task available.")
         return 0
     task = package["task"]
-    run_dir = Path(args.runs_dir) / f"workspace-task-{task['id']}"
+    run_dir = Path(args.runs_dir).resolve() / f"workspace-task-{task['id']}"
     write_task_package(run_dir, package)
 
     repo_url, workspace, base_branch = resolve_git_settings(args, package)
