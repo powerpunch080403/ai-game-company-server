@@ -379,7 +379,9 @@ def test_handle_discord_message_sends_recent_history_to_owner() -> None:
     assert "sonyeongha: 1번" in api.owner_payloads[0]["context"]
 
 
-def test_handle_discord_message_start_creates_bootstrap_task_and_thread() -> None:
+def test_handle_discord_message_start_creates_bootstrap_task_and_thread(monkeypatch) -> None:
+    monkeypatch.delenv("GAME_COMPANY_BOOTSTRAP_REPO_URL", raising=False)
+    monkeypatch.delenv("GAME_COMPANY_BOOTSTRAP_WORKSPACE_PATH", raising=False)
     channel = FakeChannel(
         "channel-1",
         history_messages=[
@@ -406,6 +408,7 @@ def test_handle_discord_message_start_creates_bootstrap_task_and_thread() -> Non
 
     assert action.operation_result["kind"] == "owner_tool_executed"
     assert action.operation_result["tool_name"] == "create_coin_arena_bootstrap_task"
+    assert api.owner_payloads == []
     assert api.projects[0]["name"] == "Coin Arena Server Test"
     assert api.created_tasks[0]["branch"] == "worker/canvas-client-bootstrap"
     assert api.thread_refs[0][0] == api.created_tasks[0]["id"]
@@ -417,6 +420,38 @@ def test_handle_discord_message_start_creates_bootstrap_task_and_thread() -> Non
     assert "말만 한 게 아니라 서버에 첫 작업을 실제로 만들었어" in channel.sent[0]
     assert "프로젝트 Git workspace 설정: 없음" in channel.sent[0]
     assert "워커 자동 시작: 꺼짐" in channel.sent[0]
+
+
+def test_handle_discord_message_thread_missing_restart_uses_tool_not_owner_run() -> None:
+    channel = FakeChannel(
+        "channel-1",
+        history_messages=[
+            fake_message("Web/Canvas 기반 30초 코인 아레나로 시작하자", bot=True, name="OwnerBot"),
+        ],
+    )
+    message = fake_message("스레드가 안만들어졌어 처음부터 다시해", channel, name="sonyeongha")
+    api = FakeApi(
+        [
+            {
+                "mapping_id": "mapping-1",
+                "discord_guild_id": "guild-1",
+                "discord_channel_id": "channel-1",
+                "discord_thread_id": "",
+                "conversation_kind": "owner_room",
+                "thread_role": "owner-design",
+                "project_id": None,
+                "archived_at": None,
+            }
+        ]
+    )
+
+    action = asyncio.run(handle_discord_message(message, api, submit_owner_run=True, execute_owner_run=True))
+
+    assert action.operation_result["kind"] == "owner_tool_executed"
+    assert action.operation_result["thread"]["created"] is True
+    assert api.owner_payloads == []
+    assert api.thread_refs[0][0] == api.created_tasks[0]["id"]
+    assert channel.created_threads[0].name.startswith("Task-")
 
 
 def test_handle_discord_message_start_updates_project_config_and_starts_worker(monkeypatch) -> None:

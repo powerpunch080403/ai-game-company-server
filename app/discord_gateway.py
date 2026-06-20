@@ -120,7 +120,8 @@ def handle_gateway_message(
         action = attach_context_status(action, api.context_status(mapping["mapping_id"], status_payload))
 
     action = attach_owner_run_payload(action, context, mapping, dry_run=not execute_owner_run)
-    if submit_owner_run and action.owner_run_payload:
+    tool_call = detect_owner_tool_call(context, action)
+    if submit_owner_run and action.owner_run_payload and tool_call is None:
         action = attach_owner_run_result(action, api.create_owner_run(action.owner_run_payload))
 
     if action.needs_approval and mapping:
@@ -187,7 +188,31 @@ def detect_owner_tool_call(context: DiscordMessageContext, action: DiscordBotAct
     if not action.needs_owner:
         return None
     normalized = context.content.replace(" ", "").lower()
-    if not any(keyword in normalized for keyword in ("시작", "계속진행", "진행해", "진행", "start", "continue")):
+    start_keywords = (
+        "시작",
+        "처음부터",
+        "계속진행",
+        "진행해",
+        "진행",
+        "다시해",
+        "다시해봐",
+        "다시시작",
+        "새로",
+        "start",
+        "continue",
+        "restart",
+    )
+    thread_retry_keywords = (
+        "스레드가안",
+        "스레드안",
+        "스레드삭제",
+        "스레드다삭제",
+        "스레드못",
+        "안만들어",
+        "안만들어졌",
+        "thread",
+    )
+    if not any(keyword in normalized for keyword in (*start_keywords, *thread_retry_keywords)):
         return None
     recent = "\n".join([*context.recent_messages, context.content]).lower()
     cues = ("30초 코인", "coin arena", "web/canvas", "canvas", "서버 테스트", "작은 게임", "작은게임")
