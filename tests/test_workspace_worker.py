@@ -4,7 +4,7 @@ import subprocess
 from pathlib import Path
 
 from app.git_workspace import git_executable, prepare_branch, run_git
-from app.workspace_worker import commit_changes, git_status_files, push_branch, run_workspace_command
+from app.workspace_worker import commit_changes, git_status_files, push_branch, run_workspace_command, scrub_worker_environment
 from app.worker_runner import write_task_package
 
 
@@ -106,6 +106,24 @@ def test_workspace_command_exposes_task_paths_in_env(tmp_path: Path) -> None:
     assert str(run_dir / "task_package.json") in output
     assert str(run_dir / "instructions.md") in output
     assert str(workspace) in output
+
+
+def test_scrub_worker_environment_removes_secret_like_names() -> None:
+    env = scrub_worker_environment(
+        {
+            "PATH": "keep",
+            "GAME_COMPANY_API_TOKEN": "remove",
+            "OPENAI_API_KEY": "remove",
+            "DISCORD_BOT_TOKEN": "remove",
+            "NORMAL_SETTING": "keep-too",
+        }
+    )
+
+    assert env["PATH"] == "keep"
+    assert env["NORMAL_SETTING"] == "keep-too"
+    assert "GAME_COMPANY_API_TOKEN" not in env
+    assert "OPENAI_API_KEY" not in env
+    assert "DISCORD_BOT_TOKEN" not in env
 
 
 def test_push_branch_publishes_worker_branch(tmp_path: Path) -> None:

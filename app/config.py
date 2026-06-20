@@ -33,6 +33,7 @@ class Settings:
     node_mode: str = "authority"
     discord_bot_token: str = ""
     discord_task_channel_id: str = ""
+    allow_unsafe_no_auth: bool = False
 
 
 def load_settings() -> Settings:
@@ -59,4 +60,5 @@ def load_settings() -> Settings:
         node_mode=os.getenv("GAME_COMPANY_NODE_MODE", "authority"),
         discord_bot_token=os.getenv("DISCORD_BOT_TOKEN", ""),
         discord_task_channel_id=os.getenv("GAME_COMPANY_DISCORD_TASK_CHANNEL_ID", ""),
+        allow_unsafe_no_auth=os.getenv("GAME_COMPANY_ALLOW_UNSAFE_NO_AUTH", "0") == "1",
     )

@@ -8,6 +8,15 @@ from app.config import Settings
 
 
 PUBLIC_PATHS = {"/health", "/docs", "/openapi.json", "/redoc"}
+UNSAFE_TOKEN_VALUES = {
+    "change-me",
+    "change-me-before-external-access",
+    "changeme",
+    "replace-me",
+    "example-token",
+    "token",
+    "secret",
+}
 
 
 def configured_auth_tokens(config: Settings) -> dict[str, str]:
@@ -18,7 +27,11 @@ def configured_auth_tokens(config: Settings) -> dict[str, str]:
         "readonly": config.readonly_token,
         "artifact": config.artifact_token,
     }
-    return {role: token for role, token in tokens.items() if token}
+    return {
+        role: token
+        for role, token in tokens.items()
+        if token and token.strip().lower() not in UNSAFE_TOKEN_VALUES
+    }
 
 
 def request_tokens(request: Request) -> list[str]:
@@ -62,9 +75,20 @@ def is_authorized(role: str, method: str, path: str) -> bool:
     return False
 
 
+def no_auth_allowed_for_config(config: Settings) -> bool:
+    if config.allow_unsafe_no_auth:
+        return True
+    return config.host in {"127.0.0.1", "localhost", "::1"}
+
+
 async def require_api_token(request: Request, call_next):
     path = request.url.path
     tokens = configured_auth_tokens(settings)
+    if path not in PUBLIC_PATHS and not tokens and not no_auth_allowed_for_config(settings):
+        return JSONResponse(
+            {"detail": "API tokens are required when binding beyond localhost"},
+            status_code=503,
+        )
     if tokens and path not in PUBLIC_PATHS:
         role = None
         for candidate in request_tokens(request):

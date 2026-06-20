@@ -16,6 +16,16 @@ from app.worker_runner import request_json, write_task_package
 
 load_dotenv()
 
+SECRET_ENV_MARKERS = ("TOKEN", "KEY", "SECRET", "PASSWORD", "CREDENTIAL")
+
+
+def scrub_worker_environment(source: dict[str, str]) -> dict[str, str]:
+    return {
+        key: value
+        for key, value in source.items()
+        if not any(marker in key.upper() for marker in SECRET_ENV_MARKERS)
+    }
+
 
 def git_status_files(workspace: Path) -> list[str]:
     # Use subprocess directly instead of run_git because run_git strips
@@ -43,7 +53,7 @@ def run_workspace_command(command: str, workspace: Path, package: dict[str, Any]
         validate_shell_command(command)
     except CommandSafetyError as exc:
         return 126, f"Command blocked by safety policy: {exc}"
-    env = os.environ.copy()
+    env = scrub_worker_environment(os.environ.copy())
     env["GAME_COMPANY_TASK_ID"] = str(package["task"]["id"])
     env["GAME_COMPANY_TASK_PACKAGE"] = str(run_dir / "task_package.json")
     env["GAME_COMPANY_TASK_INSTRUCTIONS"] = str(run_dir / "instructions.md")

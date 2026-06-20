@@ -115,3 +115,28 @@ def test_cleanup_artifacts_apply(temp_db: Path, tmp_path: Path) -> None:
     assert row is not None
     assert row["artifact_id"] == "art-expired-candidate"
     conn.close()
+
+
+def test_cleanup_artifacts_skips_paths_outside_root(temp_db: Path, tmp_path: Path) -> None:
+    artifact_root = tmp_path / "artifacts"
+    artifact_root.mkdir(parents=True, exist_ok=True)
+    outside = tmp_path / "outside.log"
+    outside.write_text("must stay", encoding="utf-8")
+
+    conn = sqlite3.connect(temp_db)
+    now = datetime.now(UTC)
+    expired_35_days = (now - timedelta(days=35)).isoformat().replace("+00:00", "Z")
+    conn.execute(
+        """
+        INSERT INTO artifacts (artifact_id, project_id, artifact_type, filename, path, retention_policy, important, release_or_milestone, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        ("art-path-traversal", 1, "log", "outside.log", "../outside.log", "standard_30_days", 0, 0, expired_35_days, expired_35_days),
+    )
+    conn.commit()
+    conn.close()
+
+    candidates = cleanup_artifacts(temp_db, artifact_root, apply=True)
+
+    assert "art-path-traversal" not in candidates
+    assert outside.read_text(encoding="utf-8") == "must stay"

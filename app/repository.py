@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import fnmatch
 import json
+import re
 import sqlite3
 import subprocess
 import uuid
@@ -10,6 +11,7 @@ from hashlib import sha256
 from typing import Any
 
 from app.db import transaction
+from app.services.artifact_files import SAFE_ARTIFACT_ID_PATTERN
 from app.schemas import (
     ApprovalCreate,
     ApprovalDecision,
@@ -514,9 +516,14 @@ class Repository:
         self.get_project(payload.project_id)
         if payload.task_id is not None:
             self.get_task(payload.task_id)
+            task_project = self._project_for_task(payload.task_id)
+            if task_project is None or task_project["id"] != payload.project_id:
+                raise ValueError("artifact task_id must belong to project_id")
         if payload.machine_id is not None:
             self.get_machine(payload.machine_id)
         artifact_id = payload.artifact_id or str(uuid.uuid4())
+        if not re.fullmatch(SAFE_ARTIFACT_ID_PATTERN, artifact_id):
+            raise ValueError("invalid artifact_id")
         timestamp = now_iso()
         self.conn.execute(
             """
@@ -1193,6 +1200,7 @@ class Repository:
                 UPDATE tasks
                 SET status = 'pending',
                     retry_count = retry_count + 1,
+                    base_commit = NULL,
                     leased_by = NULL,
                     leased_until = NULL,
                     completed_at = NULL,
@@ -1423,17 +1431,11 @@ class Repository:
             if row is None:
                 raise KeyError("task not found")
             task = row_to_dict(row) or {}
-            if task["status"] == "success":
-                raise ValueError("successful task cannot be claimed")
-            if task["status"] in {"failed", "blocked", "needs_rebase", "scope_violation"}:
-                raise ValueError("failed, blocked, needs_rebase, or scope_violation task must be retried before claim")
-            if (
-                task["status"] == "running"
-                and task["leased_by"] != worker_id
-                and task["leased_until"] is not None
-                and task["leased_until"] >= timestamp
-            ):
-                raise ValueError("task is already leased by another worker")
+            if task["status"] == "running":
+                if task["leased_until"] is None or task["leased_until"] >= timestamp:
+                    raise ValueError("task is already leased")
+            elif task["status"] != "pending":
+                raise ValueError(f"{task['status']} task must be retried before claim")
             original_branch = task["branch"]
             from app.config import load_settings
             cfg = load_settings()

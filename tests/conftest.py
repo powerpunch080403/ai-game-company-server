@@ -18,3 +18,5 @@ for key in [
     "GAME_COMPANY_DISCORD_TASK_CHANNEL_ID",
 ]:
     os.environ[key] = ""
+
+os.environ["GAME_COMPANY_ALLOW_UNSAFE_NO_AUTH"] = "1"

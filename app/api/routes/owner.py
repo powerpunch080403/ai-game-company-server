@@ -121,7 +121,7 @@ def merge_next_owner_candidate(
         return {"status": "no_candidates", "dry_run": payload.dry_run, "candidate_count": len(candidates)}
     if payload.dry_run:
         return {"status": "ready", "dry_run": True, "candidate": ready}
-    result = merge_owner_task(ready["task"]["id"], payload, repo)
+    result = merge_owner_task_legacy_impl(ready["task"]["id"], payload, repo)
     return {"selected": ready, **result}
 
 
@@ -130,6 +130,17 @@ def merge_owner_task(
     task_id: int,
     payload: OwnerTaskMergeRequest,
     repo: Repository = Depends(get_repo),
+) -> dict:
+    raise HTTPException(
+        status_code=410,
+        detail="legacy task merge endpoint is disabled; use merge candidate approval and execution APIs",
+    )
+
+
+def merge_owner_task_legacy_impl(
+    task_id: int,
+    payload: OwnerTaskMergeRequest,
+    repo: Repository,
 ) -> dict:
     try:
         package = repo.get_task_package(task_id)

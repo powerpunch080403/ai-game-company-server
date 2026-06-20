@@ -7,7 +7,7 @@ from app.api.deps import get_repo, get_settings, not_found
 from app.config import Settings
 from app.repository import Repository
 from app.schemas import ArtifactCreate
-from app.services.artifact_files import artifact_relative_dir, safe_artifact_filename
+from app.services.artifact_files import artifact_relative_dir, resolve_artifact_path, safe_artifact_filename
 
 
 router = APIRouter()
@@ -19,6 +19,8 @@ def create_artifact(payload: ArtifactCreate, repo: Repository = Depends(get_repo
         return repo.create_artifact(payload)
     except KeyError as exc:
         raise not_found(exc) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
 
 
 @router.get("/artifacts")
@@ -68,8 +70,13 @@ async def upload_artifact_content(
             raise HTTPException(status_code=413, detail="artifact upload exceeds configured size limit")
     safe_name = safe_artifact_filename(filename or artifact.get("filename") or artifact_id)
     relative_path = artifact_relative_dir(artifact) / safe_name
-    target_path = config.artifact_root / relative_path
+    try:
+        target_path = resolve_artifact_path(config.artifact_root, relative_path)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
     target_path.parent.mkdir(parents=True, exist_ok=True)
+    if target_path.parent.is_symlink() or target_path.is_symlink():
+        raise HTTPException(status_code=422, detail="artifact path must not contain symlinks")
 
     total_bytes = 0
     try:
@@ -109,7 +116,12 @@ def download_artifact_content(
         raise not_found(exc) from exc
     if not artifact.get("path"):
         raise HTTPException(status_code=404, detail="artifact content not uploaded")
-    path = config.artifact_root / artifact["path"]
+    try:
+        path = resolve_artifact_path(config.artifact_root, artifact["path"])
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    if path.is_symlink():
+        raise HTTPException(status_code=422, detail="artifact path must not be a symlink")
     if not path.is_file():
         raise HTTPException(status_code=404, detail="artifact file not found")
     return FileResponse(path, media_type=artifact.get("content_type") or None, filename=artifact.get("filename") or None)

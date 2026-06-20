@@ -232,8 +232,28 @@ def test_owner_cancel_task_removes_it_from_queue(client: TestClient) -> None:
     lease = client.post("/workers/code-1/lease", json={"role": "code_worker", "lease_minutes": 30})
     assert lease.status_code == 204
 
+    claim_canceled = client.post(f"/workers/code-1/tasks/{task['id']}/claim", json={"lease_minutes": 30})
+    assert claim_canceled.status_code == 409
+    assert "canceled task must be retried before claim" in claim_canceled.json()["detail"]
+
     events = client.get(f"/tasks/{task['id']}/events").json()
     assert events[-1]["event_type"] == "canceled"
+
+
+def test_task_create_rejects_invalid_worker_branch(client: TestClient) -> None:
+    invalid = client.post(
+        "/tasks",
+        json={
+            "role": "code_worker",
+            "goal": "Invalid branch",
+            "requirements": ["Reject unsafe branch"],
+            "success_criteria": ["Rejected"],
+            "estimated_minutes": 15,
+            "memory_refs": [],
+            "branch": "worker/",
+        },
+    )
+    assert invalid.status_code == 422
 
 
 def test_owner_release_running_task_returns_it_to_queue(client: TestClient) -> None:
@@ -547,6 +567,66 @@ def test_api_token_required_when_configured(client: TestClient) -> None:
         auth_module.settings = original_settings
 
 
+def test_api_fails_closed_without_tokens_when_bound_externally(client: TestClient) -> None:
+    original_settings = auth_module.settings
+    auth_module.settings = Settings(
+        db_path=Path(":memory:"),
+        host="0.0.0.0",
+        port=8080,
+        default_task_minutes=15,
+        owner_recall_minutes=30,
+        api_token="",
+        owner_token="",
+        worker_token="",
+        readonly_token="",
+        artifact_token="",
+        owner_command="",
+        owner_timeout_seconds=900,
+        owner_runs_dir=Path("./owner-runs-test"),
+        artifact_root=Path("./artifacts-test"),
+        max_artifact_upload_bytes=1024,
+        context_compact_threshold_tokens=260000,
+        context_warning_tokens=220000,
+        context_chars_per_token=3.5,
+    )
+    try:
+        blocked = client.get("/tasks")
+        assert blocked.status_code == 503
+        assert "tokens are required" in blocked.json()["detail"]
+        assert client.get("/health").status_code == 200
+    finally:
+        auth_module.settings = original_settings
+
+
+def test_example_tokens_do_not_enable_auth(client: TestClient) -> None:
+    original_settings = auth_module.settings
+    auth_module.settings = Settings(
+        db_path=Path(":memory:"),
+        host="0.0.0.0",
+        port=8080,
+        default_task_minutes=15,
+        owner_recall_minutes=30,
+        api_token="change-me-before-external-access",
+        owner_token="",
+        worker_token="",
+        readonly_token="",
+        artifact_token="",
+        owner_command="",
+        owner_timeout_seconds=900,
+        owner_runs_dir=Path("./owner-runs-test"),
+        artifact_root=Path("./artifacts-test"),
+        max_artifact_upload_bytes=1024,
+        context_compact_threshold_tokens=260000,
+        context_warning_tokens=220000,
+        context_chars_per_token=3.5,
+    )
+    try:
+        blocked = client.get("/tasks", headers={"Authorization": "Bearer change-me-before-external-access"})
+        assert blocked.status_code == 503
+    finally:
+        auth_module.settings = original_settings
+
+
 def test_owner_model_profiles_can_be_upserted_and_listed(client: TestClient) -> None:
     initial = client.get("/owner/readiness")
     assert initial.status_code == 200
@@ -717,8 +797,10 @@ def test_artifact_metadata_upload_and_download(client: TestClient) -> None:
             "base_branch": "main",
         },
     ).json()
+    epic = client.post(f"/projects/{project['id']}/epics", json={"name": "Artifacts", "goal": ""}).json()
+    sub_epic = client.post(f"/epics/{epic['id']}/sub-epics", json={"name": "Screenshots", "goal": ""}).json()
     task = client.post(
-        "/tasks",
+        f"/sub-epics/{sub_epic['id']}/tasks",
         json={
             "role": "test_runner",
             "goal": "Capture screenshot",
@@ -1200,9 +1282,8 @@ def test_owner_task_merge_api_reviews_and_merges_successful_task(client: TestCli
     assert candidate["review"]["warnings"] == []
 
     preview = client.post(f"/owner/tasks/{task['id']}/merge", json={})
-    assert preview.status_code == 200
-    assert preview.json()["status"] == "ready"
-    assert preview.json()["dry_run"] is True
+    assert preview.status_code == 410
+    assert "legacy task merge endpoint is disabled" in preview.json()["detail"]
 
     next_preview = client.post("/owner/merge-candidates/merge-next", json={})
     assert next_preview.status_code == 200
@@ -1219,12 +1300,10 @@ def test_owner_task_merge_api_reviews_and_merges_successful_task(client: TestCli
     assert events[-1]["event_type"] == "merged"
 
     duplicate_preview = client.post(f"/owner/tasks/{task['id']}/merge", json={})
-    assert duplicate_preview.status_code == 200
-    assert duplicate_preview.json()["status"] == "blocked"
-    assert "task has already been merged" in duplicate_preview.json()["review"]["reasons"]
+    assert duplicate_preview.status_code == 410
 
     duplicate_merge = client.post(f"/owner/tasks/{task['id']}/merge", json={"dry_run": False, "push": True})
-    assert duplicate_merge.status_code == 409
+    assert duplicate_merge.status_code == 410
 
 
 def test_multi_node_branch_naming(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -4550,4 +4629,3 @@ def test_format_task_report_thread_message_is_deterministic() -> None:
     assert "Changed files:\n- src/main.py\n- tests/test_main.py" in msg
     assert "Merge candidate:\nqueued" in msg
     assert "Notes:\nNone" in msg
-

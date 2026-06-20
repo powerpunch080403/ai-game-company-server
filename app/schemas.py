@@ -2,7 +2,10 @@ from __future__ import annotations
 
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
+
+from app.services.artifact_files import SAFE_ARTIFACT_ID_PATTERN
+from app.git_workspace import validate_worker_branch, GitWorkspaceError
 
 
 MemoryType = Literal[
@@ -91,6 +94,15 @@ class TaskCreate(BaseModel):
     write_scope: list[str] | None = None
     read_scope: list[str] | None = None
     forbidden_scope: list[str] | None = None
+
+    @field_validator("branch")
+    @classmethod
+    def branch_must_be_safe_worker_ref(cls, value: str) -> str:
+        try:
+            validate_worker_branch(value)
+        except GitWorkspaceError as exc:
+            raise ValueError(str(exc)) from exc
+        return value
 
 
 class WorkerLeaseRequest(BaseModel):
@@ -201,7 +213,7 @@ class WorkerHeartbeat(BaseModel):
 
 
 class ArtifactCreate(BaseModel):
-    artifact_id: str | None = None
+    artifact_id: str | None = Field(default=None, pattern=SAFE_ARTIFACT_ID_PATTERN)
     project_id: int
     task_id: int | None = None
     worker_id: str | None = None
@@ -473,4 +485,3 @@ class TaskFromPlanResponse(BaseModel):
     task: TaskRead
     plan: TaskPlanSearchResponse
     thread_reference: TaskThreadReferenceRead | None = None
-

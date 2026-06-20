@@ -5,6 +5,7 @@ import sqlite3
 from datetime import datetime, UTC
 from pathlib import Path
 from dotenv import load_dotenv
+from app.services.artifact_files import resolve_artifact_path
 
 load_dotenv()
 
@@ -73,7 +74,14 @@ def cleanup_artifacts(db_path: Path, artifact_root: Path, apply: bool = False) -
     print("-" * 60)
     for c in candidates:
         rel_path = c["path"]
-        abs_path = artifact_root / rel_path
+        try:
+            abs_path = resolve_artifact_path(artifact_root, rel_path)
+        except ValueError as exc:
+            print(f"ID: {c['artifact_id']} | SKIP unsafe path: {exc}")
+            continue
+        if abs_path.is_symlink():
+            print(f"ID: {c['artifact_id']} | SKIP symlink path: {abs_path}")
+            continue
         exists_str = "[File Exists]" if abs_path.is_file() else "[File Missing]"
         print(f"ID: {c['artifact_id']} | Age: {c['age_days']} days (Limit: {c['limit_days']}) | {exists_str}")
         print(f"  Path: {abs_path}")
