@@ -17,11 +17,12 @@ class FakeObject:
 
 
 class FakeChannel:
-    def __init__(self, channel_id: str, parent_id: str | None = None):
+    def __init__(self, channel_id: str, parent_id: str | None = None, typing_fails: bool = False):
         self.id = channel_id
         self.parent_id = parent_id
         self.sent: list[str] = []
         self.typing_entered = 0
+        self.typing_fails = typing_fails
 
     async def send(self, content: str) -> None:
         self.sent.append(content)
@@ -31,6 +32,8 @@ class FakeChannel:
 
         class FakeTyping:
             async def __aenter__(self):
+                if channel.typing_fails:
+                    raise RuntimeError("typing denied")
                 channel.typing_entered += 1
 
             async def __aexit__(self, exc_type, exc, tb):
@@ -252,6 +255,31 @@ def test_handle_discord_message_splits_long_replies() -> None:
     assert len(channel.sent) == 1
     assert len(channel.sent[0]) <= 1900
     assert channel.sent[0].endswith("[truncated]")
+
+
+def test_handle_discord_message_continues_when_typing_indicator_fails() -> None:
+    channel = FakeChannel("channel-1", typing_fails=True)
+    message = fake_message("/context", channel)
+    api = FakeApi(
+        [
+            {
+                "mapping_id": "mapping-1",
+                "discord_guild_id": "guild-1",
+                "discord_channel_id": "channel-1",
+                "discord_thread_id": "",
+                "conversation_kind": "project",
+                "thread_role": "owner-design",
+                "project_id": 1,
+                "archived_at": None,
+            }
+        ]
+    )
+
+    action = asyncio.run(handle_discord_message(message, api))
+
+    assert action.action_type == "context_status_check"
+    assert channel.sent == ["Context: ok (1200/260000 estimated tokens)."]
+    assert channel.typing_entered == 0
 
 
 def test_handle_gateway_message_routes_approval_and_decides_approved() -> None:

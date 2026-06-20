@@ -235,8 +235,17 @@ async def handle_discord_message(
         )
 
     if callable(typing):
-        async with typing():
+        typing_context = typing()
+        try:
+            await typing_context.__aenter__()
+        except Exception as exc:
+            print(f"Discord typing indicator failed: {exc}", flush=True)
             action = await process_message()
+        else:
+            try:
+                action = await process_message()
+            finally:
+                await typing_context.__aexit__(None, None, None)
     else:
         action = await process_message()
 
@@ -299,10 +308,10 @@ def main() -> int:
                 reply_unmapped=args.reply_unmapped,
             )
             if action:
-                print(asdict(action))
+                print(asdict(action), flush=True)
         except Exception as exc:
-            print(f"Discord message handling failed: {exc}")
-            print(traceback.format_exc())
+            print(f"Discord message handling failed: {exc}", flush=True)
+            print(traceback.format_exc(), flush=True)
             try:
                 await message.channel.send("Message handling failed. Check server logs.")
             except Exception:
