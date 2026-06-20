@@ -87,6 +87,27 @@ def test_workspace_command_decodes_utf8_cli_output(tmp_path: Path) -> None:
     assert "utf8 output" in output
 
 
+def test_workspace_command_exposes_task_paths_in_env(tmp_path: Path) -> None:
+    remote, workspace = make_repo(tmp_path)
+    package = make_package()
+    prepare_branch(package, str(remote), workspace, "main")
+    run_dir = tmp_path / "run"
+    write_task_package(run_dir, package)
+
+    command = (
+        "python -c \"import os; "
+        "print(os.environ['GAME_COMPANY_TASK_PACKAGE']); "
+        "print(os.environ['GAME_COMPANY_TASK_INSTRUCTIONS']); "
+        "print(os.environ['GAME_COMPANY_WORKSPACE'])\""
+    )
+    return_code, output = run_workspace_command(command, workspace, package, run_dir)
+
+    assert return_code == 0
+    assert str(run_dir / "task_package.json") in output
+    assert str(run_dir / "instructions.md") in output
+    assert str(workspace) in output
+
+
 def test_push_branch_publishes_worker_branch(tmp_path: Path) -> None:
     remote, workspace = make_repo(tmp_path)
     package = make_package()

@@ -46,6 +46,7 @@ def run_workspace_command(command: str, workspace: Path, package: dict[str, Any]
     env = os.environ.copy()
     env["GAME_COMPANY_TASK_ID"] = str(package["task"]["id"])
     env["GAME_COMPANY_TASK_PACKAGE"] = str(run_dir / "task_package.json")
+    env["GAME_COMPANY_TASK_INSTRUCTIONS"] = str(run_dir / "instructions.md")
     env["GAME_COMPANY_WORKSPACE"] = str(workspace)
     completed = subprocess.run(
         command,
@@ -126,7 +127,7 @@ def build_workspace_report(
     }
 
 
-def load_or_lease_package(args: argparse.Namespace) -> tuple[dict[str, Any], bool]:
+def load_or_lease_package(args: argparse.Namespace) -> tuple[dict[str, Any] | None, bool]:
     if args.task_id:
         if args.report and not args.no_report:
             request_json(
@@ -141,7 +142,7 @@ def load_or_lease_package(args: argparse.Namespace) -> tuple[dict[str, Any], boo
         json={"role": args.role, "lease_minutes": args.lease_minutes, "requires_project_config": True},
     )
     if leased is None:
-        raise RuntimeError("No task available.")
+        return None, False
     return request_json("GET", f"{args.server}/tasks/{leased['id']}/package"), True
 
 
@@ -151,6 +152,9 @@ def run_workspace_worker(args: argparse.Namespace) -> int:
 
     started_at = time.monotonic()
     package, should_report = load_or_lease_package(args)
+    if package is None:
+        print("No task available.")
+        return 0
     task = package["task"]
     run_dir = Path(args.runs_dir) / f"workspace-task-{task['id']}"
     write_task_package(run_dir, package)
