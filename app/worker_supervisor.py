@@ -84,7 +84,7 @@ def run_supervisor_once(args: argparse.Namespace) -> int:
         check=False,
     )
     if completed.stdout:
-        print(completed.stdout, end="")
+        print(completed.stdout, end="", flush=True)
     return completed.returncode
 
 
